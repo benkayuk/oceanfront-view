@@ -716,7 +716,7 @@ export class CarScene {
     // the network's plain strips lack) and the fillets as lines; the arm's own lines are the network's
     const armArcs = [];
     for (const arm of jn.arms) armArcs.push(...arm.arcs);
-    this.ribbons.branch.setPairs(jn.arms.map(a => a.strip), 0.002);
+    this.ribbons.branch.setPairs(jn.arms.map(a => a.strip), -0.003);   // over the network's strips (-0.004), under its lines (-0.002)
     this.ribbons.branchEdge.set(armArcs, 0.25, 0.012);
     this.ribbons.branchCenter.set([], 0.14, 0.012);
     this.ribbons.branchLane.set([], 0.13, 0.012);

@@ -265,6 +265,23 @@ describe('roads layer through StateBuilder', async () => {
     assert.ok(net.centers.length >= 2, 'two-way roads get centerlines');
   });
 
+  test('where a road goes on into a wider way, the strip and edges ease over 20 m rather than stepping', () => {
+    const layer = { ways: [
+      { id: 1, name: 'Wide Street', lanes: 2, oneWay: false, width: 7.2, pts: [[-200, 0], [0, 0]] },
+      { id: 2, name: 'Wide Street', lanes: 4, oneWay: false, width: 14.4, pts: [[0, 0], [200, 0]] },
+    ] };
+    const net = roadNetwork(layer);
+    const wide = net.strips[1];
+    assert.ok(Math.abs(wide.left[0][1] - 3.6) < 1e-9, `starts at the narrow width: ${wide.left[0]}`);
+    const kneeIdx = wide.left.findIndex(p => Math.abs(p[0] - 20) < 1e-6);
+    assert.ok(kneeIdx > 0 && Math.abs(wide.left[kneeIdx][1] - 7.2) < 1e-9, `full width 20 m in: ${JSON.stringify(wide.left)}`);
+    assert.ok(Math.abs(wide.right[wide.right.length - 1][1] + 7.2) < 1e-9);
+    const narrow = net.strips[0];
+    assert.ok(narrow.left.every(p => Math.abs(p[1] - 3.6) < 1e-9), 'the narrower way keeps its width');
+    // no opening at the shared node: the road goes on
+    assert.ok(net.centers.some(c => c.some(p => Math.abs(p[0]) < 0.2)), 'the centerline runs through');
+  });
+
   test('the point features on the roads ride along with the arriving directions', () => {
     const md = network();
     const tile = md.tiles.get('test/tile').tile;

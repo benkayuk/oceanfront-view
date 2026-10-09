@@ -400,6 +400,26 @@ export function fromDistance(pts, from) {
   return [];
 }
 
+/** The polyline with a vertex inserted at arc length s (unchanged when s falls on a vertex or outside). */
+function insertAt(pts, s) {
+  const st = cumulative(pts);
+  for (let i = 1; i < pts.length; i++) {
+    if (s <= st[i - 1] + 0.01 || s >= st[i] - 0.01) continue;
+    const f = (s - st[i - 1]) / (st[i] - st[i - 1]);
+    return [...pts.slice(0, i), [pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * f, pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * f], ...pts.slice(i)];
+  }
+  return pts;
+}
+
+/** A polyline offset to its left by d[i] * sign at each point (neighbours give the direction). */
+function offsetPolyVar(pts, ds, sign) {
+  return pts.map((p, i) => {
+    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+    const u = norm(sub(b, a)), d = ds[i] * sign;
+    return [p[0] - u[1] * d, p[1] + u[0] * d];
+  });
+}
+
 /** A polyline offset to its left by d (uses each point's neighbours for the direction). */
 function offsetPoly(pts, d) {
   return pts.map((p, i) => {
@@ -491,11 +511,11 @@ export function junctions(ref, hm) {
       if (!k || Math.abs(k.a) > CORNER_MAX_M) continue;
       corners.push({ j, C: k.C, sC: s0 + k.a, tC: k.t, um: k.um });
     }
-    if (corners.length < 2) continue;
     corners.sort((p, q) => p.sC - q.sC);
     // where our road ends at the node (a T, a Y: `end`), only the corner on our side of the node is real; the arm's far
     // edge is the through road's, running on untouched
-    if (b.end) corners.length = 1;
+    if (b.end) { while (corners.length && corners[0].sC > s0 + 0.01) corners.shift(); corners.length = Math.min(corners.length, 1); }
+    if (corners.length < (b.end ? 1 : 2)) continue;
     const arcs = [], edges = [], bounds = {};
     let cutFrom = Infinity, cutTo = -Infinity;
     corners.forEach((k, idx) => {
@@ -572,6 +592,7 @@ function densifyPts(pts, step) {
 // every road, the one we're on included (the field highlights the ego lane's two on top of them).
 
 const NET_LINE_LIFT = -0.002;   // below the tires' contact plane; over the strips by polygon offset (roadnet.js)
+const TAPER_M = 20;             // m over which a road's width eases into a wider or narrower way of the same road
 const NODE_CLEAR = 1.0;                  // m past the other road's half width that an inner line stops before a shared node
 const PARALLEL_ANG = 5 * Math.PI / 180;  // a way leaving within this of our line runs with us: no opening
 const CONTINUE_ANG = 25 * Math.PI / 180; // end to end at less than this: the road goes on, no opening
@@ -592,9 +613,37 @@ export function roadNetwork(layer) {
     if (i > 0) o.push(norm(sub(w.pts[i - 1], p)));
     return o;
   };
+  // where a road goes on into a way of another width (lanes gained or lost), the width eases over TAPER_M rather than
+  // stepping: the half width per point, from the narrower neighbour's at the shared end
+  const continuesInto = (w, i) => {
+    const here = nodes.get(key(w.pts[i]));
+    if (!here) return null;
+    const um = i > 0 ? norm(sub(w.pts[i], w.pts[i - 1])) : norm(sub(w.pts[1], w.pts[0]));
+    for (const o of here) {
+      const ow = ways[o.wi];
+      if (ow === w) continue;
+      const oEnd = o.i === 0 || o.i === ow.pts.length - 1;
+      if (!oEnd || here.length !== 2) continue;
+      for (const ub of leaving(ow, o.i)) {
+        const ang = Math.abs(Math.atan2(cross(um, ub), dot(um, ub)));
+        if (Math.min(ang, Math.PI - ang) < CONTINUE_ANG) return ow;
+      }
+    }
+    return null;
+  };
   ways.forEach((w, wi) => {
-    const pts = w.pts, h = w.width / 2, st = cumulative(pts);
-    const left_ = offsetPoly(pts, h), right_ = offsetPoly(pts, -h);
+    const h = w.width / 2;
+    const first = continuesInto(w, 0), last = continuesInto(w, w.pts.length - 1);
+    const tFirst = first && first.width < w.width, tLast = last && last.width < w.width;
+    // the taper needs a vertex where it ends: put one TAPER_M in from a tapered end
+    let pts = w.pts;
+    if (tFirst) pts = insertAt(pts, TAPER_M);
+    if (tLast) pts = insertAt(pts, cumulative(pts)[pts.length - 1] - TAPER_M);
+    const st = cumulative(pts), L = st[st.length - 1];
+    const hs = new Array(pts.length).fill(h);
+    if (tFirst) { const h0 = first.width / 2; for (let i = 0; i < pts.length; i++) hs[i] = Math.min(hs[i], h0 + (h - h0) * Math.min(1, st[i] / TAPER_M)); }
+    if (tLast) { const h1 = last.width / 2; for (let i = 0; i < pts.length; i++) hs[i] = Math.min(hs[i], h1 + (h - h1) * Math.min(1, (L - st[i]) / TAPER_M)); }
+    const left_ = offsetPolyVar(pts, hs, 1), right_ = offsetPolyVar(pts, hs, -1);
     out.strips.push({ left: left_, right: right_ });
     const inner = [], edgeCuts = { 1: [], '-1': [] };
     pts.forEach((p, i) => {
