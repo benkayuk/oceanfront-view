@@ -155,8 +155,24 @@ export function packFrame(bus, addr, sigs) {
 }
 
 // ---- demo: synthesize a few messages so the read-out works without the car ----
+// the energy counters after `sec` seconds of a drive (0.1 kWh raw steps), with the VCU's shares in 0.1 % steps
+function energyFrames(sec) {
+  const h = sec / 3600;
+  const drive = { drv: 12.4 + 20 * h, ecc: 1.8 + 1.5 * h, bhm: 0.6 + 0.4 * h, acsy: 0.9 + 0.3 * h, ext: 0.2 };
+  const charge = { batt: 48.2, ecc: 0.7, bhm: 1.1, acsy: 0.4, loss: 3.6 };
+  const raw = (kwh) => Math.round(kwh * 10);
+  const pct = (part, all) => Math.round(part / all * 1000);
+  const dTot = Object.values(drive).reduce((a, b) => a + b, 0), cTot = Object.values(charge).reduce((a, b) => a + b, 0);
+  return [
+    packFrame('IBUS1', 0x578, { VCU_NotChrgModECCCnseEgy: raw(drive.ecc), VCU_NotChrgModVehDrvCnseEgy: raw(drive.drv), VCU_NotChrgModBHMCnseEgy: raw(drive.bhm), VCU_NotChrgModExtDchaCnseEgy: raw(drive.ext) }),
+    packFrame('IBUS1', 0x579, { VCU_NotChrgModAcsyCnseEgy: raw(drive.acsy), VCU_NotChrgModVehTotCnseEgy: raw(dTot), VCU_ChrgModECCCnseEgy: raw(charge.ecc), VCU_ChrgModVehChrgEgy: raw(charge.batt) }),
+    packFrame('IBUS1', 0x57A, { VCU_ChrgModBattHeatgMngCnseEgy: raw(charge.bhm), VCU_ChrgModAcsyCnseEgy: raw(charge.acsy), VCU_ChrgModChrgEffCnseEgy: raw(charge.loss), VCU_ChrgModVehTotChrgEgy: raw(cTot) }),
+    packFrame('IBUS1', 0x57B, { VCU_NotChrgModECCCnseEgyPerc: pct(drive.ecc, dTot), VCU_NotChrgModVehDrvCnseEgyPerc: pct(drive.drv, dTot), VCU_NotChrgModBHMCnseEgyPerc: pct(drive.bhm, dTot), VCU_NotChrgModExtDchaCnseEgyPerc: pct(drive.ext, dTot), VCU_NotChrgModAcsyCnseEgyPerc: pct(drive.acsy, dTot) }),
+    packFrame('IBUS1', 0x57C, { VCU_ChrgModECCCnseEgyPerc: pct(charge.ecc, cTot), VCU_ChrgModVehChrgEgyPerc: pct(charge.batt, cTot), VCU_ChrgModBHMCnseEgyPerc: pct(charge.bhm, cTot), VCU_ChrgModAcsyCnseEgyPerc: pct(charge.acsy, cTot), VCU_ActEgyCnsTyp: 1, VCU_ChrgModChrgEffCnseEgyPerc: pct(charge.loss, cTot) }),
+  ];
+}
 class Demo {
-  constructor(cs) { this.cs = cs; this.t = 0; }
+  constructor(cs) { this.cs = cs; this.t = 0; this.t0 = performance.now(); }
   frame() {
     this.t = (this.t || 0) + 1;
     // a parked car: unlocked, driver door open, driver window half down, Normal mode, climate on at 21C, SOC 72, charging at 7 kW
@@ -179,6 +195,8 @@ class Demo {
       packFrame('IBUS2', 0x634, { VCU_ACChrgShttrSts: 1, VCU_ACChrgCrtUpprLmt: 32 }),
       packFrame('IBUS2', 0x630, { VCU_ACRmngChrgTi: 95 }),
       packFrame('IBUS2', 0x580, { VCU_PwrBattAvlEgy: 7600 }),
+      // the VCU's energy counters (energy.js): a drive of 12.4 kWh so far counting up at 20 kW with the climate on, and the last charge
+      ...energyFrames((performance.now() - this.t0) / 1000),
     ];
     this.cs.feed(f);
   }

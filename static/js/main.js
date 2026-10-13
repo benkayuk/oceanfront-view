@@ -65,7 +65,7 @@ class App {
     this.manualViewAt = -1e9;
 
     this.scene = new CarScene($('#scene'));
-    this.hud = new Hud();
+    this.hud = new Hud(this);
     this.vehicle = new VehicleState();
     this.ui = new Settings(this);
     this.car = new CarControls(this);   // the car controls mockup (tap the car)

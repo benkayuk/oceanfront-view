@@ -422,6 +422,39 @@ export const RX_MESSAGES = [
     { name: 'TBOX_GPSHDOP', start: 31, len: 8, res: 0.1, off: 0, init: 0 },
     { name: 'TBOX_Pitch', start: 47, len: 16, res: 0.01, off: -180, init: 0 },
   ]},
+  { bus: 'IBUS1', addr: 0x578, name: 'VCU_0x578', cycleMs: 500, signals: [
+    { name: 'VCU_NotChrgModECCCnseEgy', start: 7, len: 16, res: 0.1, off: 0, init: 0 },
+    { name: 'VCU_NotChrgModVehDrvCnseEgy', start: 23, len: 16, res: 0.1, off: 0, init: 0 },
+    { name: 'VCU_NotChrgModBHMCnseEgy', start: 39, len: 16, res: 0.1, off: 0, init: 0 },
+    { name: 'VCU_NotChrgModExtDchaCnseEgy', start: 55, len: 16, res: 0.1, off: 0, init: 0 },
+  ]},
+  { bus: 'IBUS1', addr: 0x579, name: 'VCU_0x579', cycleMs: 500, signals: [
+    { name: 'VCU_NotChrgModAcsyCnseEgy', start: 7, len: 16, res: 0.1, off: 0, init: 0 },
+    { name: 'VCU_NotChrgModVehTotCnseEgy', start: 23, len: 16, res: 0.1, off: 0, init: 0 },
+    { name: 'VCU_ChrgModECCCnseEgy', start: 39, len: 16, res: 0.1, off: 0, init: 0 },
+    { name: 'VCU_ChrgModVehChrgEgy', start: 55, len: 16, res: 0.1, off: 0, init: 0 },
+  ]},
+  { bus: 'IBUS1', addr: 0x57A, name: 'VCU_0x57A', cycleMs: 500, signals: [
+    { name: 'VCU_ChrgModBattHeatgMngCnseEgy', start: 7, len: 16, res: 0.1, off: 0, init: 0 },
+    { name: 'VCU_ChrgModAcsyCnseEgy', start: 23, len: 16, res: 0.1, off: 0, init: 0 },
+    { name: 'VCU_ChrgModChrgEffCnseEgy', start: 39, len: 16, res: 0.1, off: 0, init: 0 },
+    { name: 'VCU_ChrgModVehTotChrgEgy', start: 55, len: 16, res: 0.1, off: 0, init: 0 },
+  ]},
+  { bus: 'IBUS1', addr: 0x57B, name: 'VCU_0x57B', cycleMs: 500, signals: [
+    { name: 'VCU_NotChrgModECCCnseEgyPerc', start: 7, len: 12, res: 0.1, off: 0, init: 0 },
+    { name: 'VCU_NotChrgModVehDrvCnseEgyPerc', start: 11, len: 12, res: 0.1, off: 0, init: 0 },
+    { name: 'VCU_NotChrgModBHMCnseEgyPerc', start: 31, len: 12, res: 0.1, off: 0, init: 0 },
+    { name: 'VCU_NotChrgModExtDchaCnseEgyPerc', start: 35, len: 12, res: 0.1, off: 0, init: 0 },
+    { name: 'VCU_NotChrgModAcsyCnseEgyPerc', start: 51, len: 12, res: 0.1, off: 0, init: 0 },
+  ]},
+  { bus: 'IBUS1', addr: 0x57C, name: 'VCU_0x57C', cycleMs: 500, signals: [
+    { name: 'VCU_ChrgModECCCnseEgyPerc', start: 7, len: 12, res: 0.1, off: 0, init: 0 },
+    { name: 'VCU_ChrgModVehChrgEgyPerc', start: 11, len: 12, res: 0.1, off: 0, init: 0 },
+    { name: 'VCU_ChrgModBHMCnseEgyPerc', start: 31, len: 12, res: 0.1, off: 0, init: 0 },
+    { name: 'VCU_ChrgModAcsyCnseEgyPerc', start: 35, len: 12, res: 0.1, off: 0, init: 0 },
+    { name: 'VCU_ActEgyCnsTyp', start: 53, len: 2, res: 1, off: 0, init: 0, enum: {0: "Default", 1: "Active_(Power_consumption_W)", 2: "Inactive_(energy_consumption_Wh_per_km)", 3: "Invalid"} },
+    { name: 'VCU_ChrgModChrgEffCnseEgyPerc', start: 51, len: 12, res: 0.1, off: 0, init: 0 },
+  ]},
   { bus: 'IBUS2', addr: 0xE9, name: 'BMS_ActualPack_U_I', cycleMs: 20, signals: [
     { name: 'BMS_Bat_HVmeasure_Current', start: 39, len: 16, res: 0.05, off: 0, signed: true, init: 0 },
     { name: 'BMS_Bat_Hvmeasure_V_Pack', start: 55, len: 16, res: 0.01, off: 0, init: 0 },
@@ -851,7 +884,7 @@ export const TX_MESSAGES = [
 ];
 
 // What the app's CAN helper lets through (receive) and the only IDs it may send, per bus (CanIds.kt has the same).
-export const RX_IDS = { IBUS1: [0x112, 0x113, 0x114, 0x115, 0x150, 0x151, 0x1B8, 0x1C2, 0x234, 0x2F4, 0x2F5, 0x318, 0x333, 0x335, 0x343, 0x358, 0x364, 0x373, 0x378, 0x471, 0x4F3, 0x4F5, 0x4F9, 0x512, 0x518, 0x554, 0x5EA, 0x179, 0x46B, 0x46D, 0x46F, 0x472, 0x473], IBUS2: [0xE9, 0x236, 0x321, 0x363, 0x369, 0x503, 0x504, 0x505, 0x580, 0x5A4, 0x630, 0x634, 0x641, 0x35B, 0x52A, 0x525, 0x526, 0x250, 0x251, 0x252, 0x255, 0x361, 0x362, 0x117, 0x118, 0x1C0, 0x20A, 0x20B, 0x20C, 0x20D, 0x20E, 0x20F, 0x210, 0x2C7, 0x2CA, 0x2CD, 0x2D0, 0x2D3, 0x2D6, 0x2D9, 0x2DC, 0x2DF, 0x2E2, 0x2E5, 0x2E8, 0x2E9, 0x2EA, 0x311, 0x313, 0x314, 0x315, 0x316, 0x317, 0x31A, 0x31B, 0x31C, 0x32B, 0x32D, 0x32F, 0x334, 0x339, 0x33B, 0x33D, 0x33F, 0x340, 0x342, 0x34B, 0x34D, 0x34F, 0x350, 0x351, 0x352, 0x353, 0x356, 0x359, 0x527] };
+export const RX_IDS = { IBUS1: [0x112, 0x113, 0x114, 0x115, 0x150, 0x151, 0x1B8, 0x1C2, 0x234, 0x2F4, 0x2F5, 0x318, 0x333, 0x335, 0x343, 0x358, 0x364, 0x373, 0x378, 0x471, 0x4F3, 0x4F5, 0x4F9, 0x512, 0x518, 0x554, 0x5EA, 0x179, 0x46B, 0x46D, 0x46F, 0x472, 0x473, 0x578, 0x579, 0x57A, 0x57B, 0x57C], IBUS2: [0xE9, 0x236, 0x321, 0x363, 0x369, 0x503, 0x504, 0x505, 0x580, 0x5A4, 0x630, 0x634, 0x641, 0x35B, 0x52A, 0x525, 0x526, 0x250, 0x251, 0x252, 0x255, 0x361, 0x362, 0x117, 0x118, 0x1C0, 0x20A, 0x20B, 0x20C, 0x20D, 0x20E, 0x20F, 0x210, 0x2C7, 0x2CA, 0x2CD, 0x2D0, 0x2D3, 0x2D6, 0x2D9, 0x2DC, 0x2DF, 0x2E2, 0x2E5, 0x2E8, 0x2E9, 0x2EA, 0x311, 0x313, 0x314, 0x315, 0x316, 0x317, 0x31A, 0x31B, 0x31C, 0x32B, 0x32D, 0x32F, 0x334, 0x339, 0x33B, 0x33D, 0x33F, 0x340, 0x342, 0x34B, 0x34D, 0x34F, 0x350, 0x351, 0x352, 0x353, 0x356, 0x359, 0x527] };
 export const TX_IDS = { IBUS1: [0x4E, 0x530, 0x534, 0x90, 0x528, 0x533, 0x52], IBUS2: [] };
 
 // The chips' hardware acceptance filters the app sets at start so every RX ID gets through (see gen_ibus.py).

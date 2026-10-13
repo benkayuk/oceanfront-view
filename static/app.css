@@ -13,6 +13,8 @@
   --amber: #f0a020;
   --red: #e5413a;
   --radar: #0a9fb2;
+  /* chart series (energy.js), validated for this surface: blue, orange, aqua, yellow, magenta */
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4;
   --shadow: 0 6px 24px rgba(20, 24, 31, 0.10), 0 1px 3px rgba(20, 24, 31, 0.08);
   --radius: 18px;
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -31,6 +33,7 @@
   --accent: #5b86ff;
   --accent-soft: rgba(91, 134, 255, 0.18);
   --radar: #2fd6e8;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181;
   --shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
   color-scheme: dark;
 }
@@ -475,4 +478,42 @@ aside.carpanel.hvac .fo-sheet__body > * + * { margin-top: 0; }
 .econ-neg { position: absolute; right: 50%; top: 0; bottom: 0; width: 0; border-radius: 2px 0 0 2px; background: var(--green); transition: width .12s linear; }
 .econ canvas { display: none; width: 100%; height: 56px; margin-top: 8px; }
 .econ.open canvas { display: block; }
+/* the Details button under the trace, only while the bar is open */
+.econ-foot { display: none; justify-content: flex-end; margin-top: 6px; }
+.econ.open .econ-foot { display: flex; }
+.econ-btn { height: 28px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--muted); font-size: 12px; font-weight: 600; }
+.econ-btn:active { background: var(--accent-soft); color: var(--text); }
 @media (max-aspect-ratio: 1/1) { .econ { margin-top: 6px; padding-top: 6px; } .econ canvas { height: 40px; } }
+
+/* ---------- energy details (energy.js): a dialog over the view ---------- */
+.dialog { position: absolute; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(16, 18, 22, .45); animation: fade .18s ease-out; }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+.dialog-card { width: min(720px, 100%); max-height: 100%; display: flex; flex-direction: column; background: var(--panel-solid); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+.dialog-card header { flex: none; display: flex; align-items: center; gap: 10px; padding: 10px 10px 10px 20px; border-bottom: 1px solid var(--line); }
+.dialog-card h2 { flex: 1; margin: 0; font-size: 18px; font-weight: 700; }
+.dialog-card .close { height: 44px; border: 0; background: transparent; border-radius: 10px; }
+.dialog-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 6px 20px 14px; -webkit-overflow-scrolling: touch; }
+.dialog-foot { margin: 16px 0 0; font-size: 11px; line-height: 1.4; color: var(--muted); }
+.en-mode { background: var(--accent-soft); color: var(--accent); }
+.en-sec { padding: 12px 0 4px; }
+.en-sec + .en-sec { border-top: 1px solid var(--line); }
+.en-head { display: flex; align-items: baseline; gap: 12px; }
+.en-head h3 { flex: 1; margin: 0; font-size: 12px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.en-total b { font-size: 32px; font-weight: 300; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.en-total small { margin-left: 5px; font-size: 13px; color: var(--muted); }
+.en-bar { display: flex; gap: 2px; height: 10px; margin: 10px 0 10px; border-radius: 5px; overflow: hidden; }
+.en-bar i { display: block; flex: 0 1 auto; min-width: 3px; height: 100%; }
+.en-legend { display: grid; grid-template-columns: 10px 1fr auto auto auto; gap: 5px 10px; align-items: center; font-size: 13px; }
+.en-legend i { width: 10px; height: 10px; border-radius: 3px; }
+.en-legend .kwh, .en-legend .rate, .en-legend .pct { font-variant-numeric: tabular-nums; text-align: right; }
+.en-legend .pct { color: var(--muted); min-width: 44px; }
+.en-legend .rate { color: var(--muted); min-width: 54px; }
+.en-graph-title { display: flex; justify-content: space-between; margin: 14px 0 4px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.en-graph { display: block; width: 100%; height: 150px; touch-action: none; }
+.en-empty { margin: 4px 0; font-size: 13px; color: var(--muted); }
+@media (max-aspect-ratio: 1/1) and (max-width: 640px) {
+  .dialog { padding: 10px; }
+  .dialog-body { padding: 4px 14px 12px; }
+  .en-legend { grid-template-columns: 10px 1fr auto auto; font-size: 12px; gap: 4px 8px; }
+  .en-legend .rate { display: none; }
+}

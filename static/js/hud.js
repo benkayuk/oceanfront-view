@@ -1,5 +1,6 @@
 // DOM overlay: speed, gear, steering assist (MADS), ACC set speed + gap, speed limit, telltales, alerts.
 import { $, $$, el, icon, iconSvg, setClass, setText, prettyLabel, MS_TO_KPH, MS_TO_MPH } from './util.js';
+import { EnergyDetails } from './energy.js';
 
 const GEAR_LETTER = {
   park: 'P', reverse: 'R', neutral: 'N', drive: 'D', eco: 'D', sport: 'D', low: 'D', brake: 'D', manumatic: 'D',
@@ -11,12 +12,13 @@ const PERSONALITY_BARS = { aggressive: 1, standard: 2, relaxed: 3 };
 // The power bar at the bottom of the status card: Tesla's bar without the graduations. Its origin is the
 // middle; regeneration draws to the left in green, consumption to the right in the text color. The value is
 // the motors' electrical power from the Fisker bus (fisker_world.js power: kw actual, demandKw asked), eased
-// so it reads. A tap opens the last minute as a trace on a canvas: consumption above the line, regen below.
+// so it reads. A tap opens the last minute as a trace on a canvas: consumption above the line, regen below,
+// with a Details button (only there when open) for the VCU's energy counters by consumer (energy.js).
 const ECON_DRIVE_KW = 180;   // full scale to the right
 const ECON_REGEN_KW = 60;    // ...and to the left (the Ocean regenerates far less than it drives)
 const ECON_SECONDS = 60;
 class Econ {
-  constructor() {
+  constructor(app) {
     this.box = $('#econ');
     this.pos = $('.econ-pos', this.box);
     this.neg = $('.econ-neg', this.box);
@@ -24,9 +26,12 @@ class Econ {
     this.kw = 0;
     this.hist = [];   // [t, kw]
     this.lastAt = 0;
+    this.details = new EnergyDetails(app);
     this.box.addEventListener('click', () => this.box.classList.toggle('open'));
+    $('#econ-details').addEventListener('click', (e) => { e.stopPropagation(); this.details.open(); });
   }
-  update(kw, t) {
+  update(kw, t, carState) {
+    this.details.sample(carState, t);
     const have = kw != null && isFinite(kw);
     setClass(this.box, 'hidden', !have && t - this.lastAt > 3);
     if (!have) return;
@@ -64,8 +69,9 @@ class Econ {
 }
 
 export class Hud {
-  constructor() {
-    this.econ = new Econ();
+  constructor(app) {
+    this.app = app;
+    this.econ = new Econ(app);
     this.speed = $('#speed');
     this.unit = $('#speed-unit');
     this.latIcon = $('#lat-icon');
@@ -112,7 +118,7 @@ export class Hud {
 
     // power: the motors' electrical power from the Fisker bus, when it's there
     const pw = f && f.power ? (f.power.kw != null ? f.power.kw : f.power.demandKw) : null;
-    this.econ.update(pw, performance.now() / 1000);
+    this.econ.update(pw, performance.now() / 1000, this.app.carState);
 
     // speed: what the cluster shows (ICC display speed via carState.vEgoCluster), else Fisker CAN
     let v = null;
