@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { SIGNALS, decodeFrame, packFrame } from '../../carstate.js';
-import { MODES, MODE_SIGNAL, EnergyLog, niceMax } from '../../energy.js';
+import { MODES, MODE_SIGNAL, EnergyLog, niceMax, shares } from '../../energy.js';
 
 const bytes = (hex) => Uint8Array.from(hex.match(/../g).map(h => parseInt(h, 16)));
 
@@ -64,4 +64,24 @@ test('the scale rounds up to a round number', () => {
   assert.equal(niceMax(3), 5);
   assert.equal(niceMax(7.2), 10);
   assert.equal(niceMax(11), 20);
+});
+
+test('the figures fall back to the counters when the VCU leaves its total and shares at zero, as the car does', () => {
+  // the car on 2026-10-13: one counter at 1.7 kWh, everything else zero
+  const car = shares(0, [1.7, 0, 0, 0, 0], [0, 0, 0, 0, 0]);
+  assert.ok(Math.abs(car.whole - 1.7) < 1e-9);
+  assert.deepEqual(car.pcts, [100, 0, 0, 0, 0]);
+  assert.equal(car.computed, true);
+  // a VCU that fills them: its figures are used as they are
+  const vcu = shares(16.1, [12.6, 1.8, 0.6, 0.9, 0.2], [78, 11, 3.7, 5.6, 1.2]);
+  assert.equal(vcu.whole, 16.1);
+  assert.deepEqual(vcu.pcts, [78, 11, 3.7, 5.6, 1.2]);
+  assert.equal(vcu.computed, false);
+  // nothing counted yet: no shares, nothing to call computed
+  const none = shares(0, [0, 0, 0, 0, 0], [0, 0, 0, 0, 0]);
+  assert.equal(none.whole, 0);
+  assert.deepEqual(none.pcts, [null, null, null, null, null]);
+  assert.equal(none.computed, false);
+  // a counter the car never sent stays unknown
+  assert.deepEqual(shares(null, [1.0, undefined], [undefined, undefined]).pcts, [100, null]);
 });

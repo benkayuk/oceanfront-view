@@ -86,6 +86,16 @@ export class EnergyLog {
 }
 
 const fmtKwh = (v) => v == null ? '--' : v.toFixed(1);
+
+/** The figures of one set: the VCU's total and shares when it fills them, else the counters summed and the shares
+ *  worked out from them (the car's VCU leaves the totals and every share at zero, and fills one counter). */
+export function shares(total, vals, percs) {
+  const sum = vals.reduce((a, v) => a + (v || 0), 0);
+  const whole = total != null && total > 0 ? total : sum;
+  const vcu = percs.some(p => p != null && p > 0);
+  const pcts = vals.map((v, i) => vcu ? percs[i] : (whole > 0 && v != null ? v / whole * 100 : null));
+  return { whole, pcts, computed: !vcu && whole > 0 };
+}
 const fmtKw = (kw) => kw >= 10 ? kw.toFixed(0) : kw.toFixed(1);
 const fmtScale = (v) => v >= 1 ? v.toFixed(1) : String(+v.toFixed(2));   // 0.05, 0.5, 2.0
 
@@ -158,8 +168,8 @@ export class EnergyDetails {
         u.canvas);
       body.append(el('section.en-sec', u.empty, u.live));
     }
-    body.append(el('p.dialog-foot', 'VCU energy counters on IBUS1 (0x578–0x57C), 0.1 kWh steps. The shares are the VCU\'s own. ' +
-      'The graphs show what each consumer counted up; the slope is its power.'));
+    this.ui.foot = el('p.dialog-foot');
+    body.append(this.ui.foot);
     const card = el('div.dialog-card', { role: 'dialog', 'aria-label': 'Energy details' },
       el('header', el('h2', 'Energy'), mode, close), body);
     this.root = el('div.dialog.hidden', { id: 'energy', 'aria-hidden': 'true', onclick: (e) => { if (e.target === this.root) this.close(); } }, card);
@@ -173,6 +183,7 @@ export class EnergyDetails {
     const modeText = modeRaw == null ? '' : (MODE_TEXT[modeRaw] || '');
     setClass(this.ui.mode, 'hidden', !modeText);
     setText(this.ui.mode, modeText);
+    let computed = false;
     for (const m of MODES) {
       const u = this.ui[m.key], log = this.logs[m.key];
       const total = cs.value(m.total);
@@ -181,14 +192,12 @@ export class EnergyDetails {
       setClass(u.empty, 'hidden', live);
       setClass(u.live, 'hidden', !live);
       if (!live) continue;
-      const sum = vals.reduce((a, v) => a + (v || 0), 0);
-      const whole = total != null && total > 0 ? total : sum;
-      setText(u.total, fmtKwh(total != null ? total : sum));
+      const sh = shares(total, vals, m.rows.map(r => cs.value(r.perc)));
+      computed = computed || sh.computed;
+      setText(u.total, fmtKwh(sh.whole));
       const segs = u.bar.children;
       m.rows.forEach((r, i) => {
-        const v = vals[i];
-        let pct = cs.value(r.perc);
-        if (pct == null && whole > 0 && v != null) pct = v / whole * 100;
+        const v = vals[i], pct = sh.pcts[i];
         segs[i].style.flexGrow = pct == null || pct <= 0 ? '0' : String(pct);
         setClass(segs[i], 'hidden', !(pct > 0));
         const row = u.rows[r.key];
@@ -201,6 +210,10 @@ export class EnergyDetails {
       setText(u.window, used > 0 ? `${fmtKwh(used)} kWh` + (kw != null ? ` · ${fmtKw(kw)} kW` : '') : '');
       this.draw(m, t);
     }
+    setText(this.ui.foot, 'VCU energy counters on IBUS1 (0x578–0x57C), 0.1 kWh steps. ' +
+      (computed ? 'The VCU leaves its totals and shares at zero on this car, so the totals and shares here are worked out from the counters it does fill. '
+        : 'The totals and shares are the VCU\'s own. ') +
+      'The graphs show what each consumer counted up; the slope is its power.');
   }
 
   // The graph: the consumers' counted-up kWh stacked over the window, the oldest at the left edge, now at
