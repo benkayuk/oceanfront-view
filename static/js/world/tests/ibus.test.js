@@ -91,3 +91,28 @@ test('bit extraction handles signals that span bytes and signed ones', () => {
   neg[5] = 0xFF; neg[6] = 0xCE;
   assert.equal(extract(neg, { start: 47, len: 16, signed: true }), -50);
 });
+
+// The car's own view (the worker's second builder) against the app's CAN helper, which forwards a frame when it
+// changes and repeats a steady one once a second: a message must stay current for longer than that.
+import { FiskerWorld } from '../fisker_world.js';
+
+test('a steady message outlives the one-second keepalive gap when the decoder is told so', () => {
+  const m = ibus.messages.get(0x373);
+  const raw = m.encode({ ECC_OutdT: 18, ECC_OutdTVld: 1 });
+  const strict = new FiskerWorld(ibus), lax = new FiskerWorld(ibus, { staleS: 3.0 });
+  for (const w of [strict, lax]) w.update([[0x373, raw, 0]], 10.0);
+  assert.equal(strict.state(11.2).vehicle.outsideTempC, null);   // the default drops it before the next keepalive
+  assert.equal(lax.state(11.2).vehicle.outsideTempC, 18);
+  assert.equal(lax.state(12.9).vehicle.outsideTempC, 18);
+  assert.equal(lax.state(13.1).vehicle.outsideTempC, null);       // a silent bus still drops it
+});
+
+test('without the motors, the power bar reads the VCU battery power, sign flipped to driving', () => {
+  const w = new FiskerWorld(ibus, { staleS: 3.0 });
+  w.update([[0x554, ibus.messages.get(0x554).encode({ VCU_HVBattActPwr: -21.5 }), 0]], 1.0);
+  assert.equal(w.state(1.0).power.kw, 21.5);
+  w.update([[0x554, ibus.messages.get(0x554).encode({ VCU_HVBattActPwr: 7.0 }), 0]], 2.0);
+  assert.equal(w.state(2.0).power.kw, -7);
+  w.update([[0x554, ibus.messages.get(0x554).encode({ VCU_HVBattActPwr: 16383 * 0.1 - 600 }), 0]], 3.0);   // "Invalid"
+  assert.equal(w.state(3.0).power.kw, null);
+});

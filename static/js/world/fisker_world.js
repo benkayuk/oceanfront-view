@@ -14,7 +14,7 @@ import { ADASIS_MSGS, AdasisHorizon } from './adasis.js';
 
 export const BUS_PT = 0;    // vehicle side: gateway-mirrored body/HMI/chassis
 export const BUS_CAM = 2;   // OEM ADAS module side
-export const STALE_S = 1.0; // message considered absent if not received for this long
+export const STALE_S = 1.0; // message considered absent if not received for this long (the comma streams every frame)
 
 // ADAS_Obj1..8 live in non-sequential IDs
 export const OBJECT_MSGS = { 1: 0x33B, 2: 0x34B, 3: 0x32D, 4: 0x33D, 5: 0x34D, 6: 0x32F, 7: 0x33F, 8: 0x34F };
@@ -78,8 +78,11 @@ class Sig {
 }
 
 export class FiskerWorld {
-  constructor(dbc) {
+  /** `staleS`: how long a message's last frame stays current. The Android app's CAN helper forwards a frame
+   *  only when it changes and repeats a steady one once a second, so the car's own view needs more than a second. */
+  constructor(dbc, { staleS = STALE_S } = {}) {
     this.dbc = dbc;
+    this.staleS = staleS;
     this.frames = new Map();     // addr -> [data, t, src]
     this.counts = new Map();     // frames seen per address (rates)
     this._decoded = new Map();   // addr -> [data, values]
@@ -125,13 +128,13 @@ export class FiskerWorld {
   /** True once ADAS-authored traffic has been seen recently. */
   get active() {
     const f = this.frames.get(0x313) || this.frames.get(0x31C);
-    return f !== undefined && this.lastT - f[1] < STALE_S;
+    return f !== undefined && this.lastT - f[1] < this.staleS;
   }
 
   decoded(addr, now = null) {
     const entry = this.frames.get(addr);
     now = now == null ? this.lastT : now;
-    if (entry === undefined || now - entry[1] > STALE_S) return null;
+    if (entry === undefined || now - entry[1] > this.staleS) return null;
     const cached = this._decoded.get(addr);
     if (cached !== undefined && bytesEqual(cached[0], entry[0])) return cached[1];
     const values = this.dbc.messages.get(addr).decode(entry[0]);
@@ -594,6 +597,10 @@ export class FiskerWorld {
       axles[key] = { tqReq: r(req, 0), tq: r(tq, 1), rpm: r(rpm, 0) };
     }
     const reqs = Object.values(axles).map(a => a.tqReq).filter(v => v != null);
+    // Without the motors' torque (the car's own buses, where the gateway doesn't pass it), the VCU's HV battery
+    // power stands in: it includes the climate and accessories, and its sign is the battery's (+ charging).
+    const batt = s.get('VCU_HVBattActPwr');
+    if (actual == null && batt != null && Math.abs(batt) <= 600) actual = -batt;
     return {
       demandKw: r(demand, 1),   // + driving, - regen
       kw: r(actual, 1),

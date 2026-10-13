@@ -20,7 +20,8 @@ const RAW_RATE_HZ = 5;
 const EARLY_TICKS = 200;   // ticks kept while the DBCs are still loading (the first is the bridge's snapshot)
 
 const LOCAL_HZ = 10;
-const LOCAL_QUIET_S = 2.0;   // no IBUS frames this long: the car's view stops
+const LOCAL_QUIET_S = 3.0;   // no IBUS frames this long: the car's view stops (the app repeats every message once a second)
+const LOCAL_STALE_S = 3.0;   // a message's last frame counts this long: longer than the app's one-second repeat and its bridge's delay
 
 let builder = null;
 let local = null;            // the car's own buses (IBUS1 = bus 0, IBUS2 = bus 2 for the decoder)
@@ -63,7 +64,7 @@ self.onmessage = (ev) => {
       builder.map.setPrefetchKm(prefetchKm);
       builder.setCalibration(calibrationOn);
       if (msg.ibusDbc) {
-        local = new StateBuilder(new DBC(msg.ibusDbc), null, { gearMsg: 0x234, mapData: new MapData(fetchTile, fetchFeatures, fetchPrefetch) });
+        local = new StateBuilder(new DBC(msg.ibusDbc), null, { gearMsg: 0x234, staleS: LOCAL_STALE_S, mapData: new MapData(fetchTile, fetchFeatures, fetchPrefetch) });
         local.map.setPrefetchKm(prefetchKm);
         local.setCalibration(calibrationOn);
         local.setBrand('fisker');

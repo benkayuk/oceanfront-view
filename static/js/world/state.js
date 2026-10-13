@@ -52,8 +52,8 @@ export class StateBuilder {
   /** worldDbc: the ADASBUS DBC (or the IBUS one, which carries the same signals); radarDbc: the radar's, or
    *  null; gearMsg: where VCU_GearSig comes from (0x214 on the ADAS bus, 0x234 on IBUS1); mapData: the road
    *  map (mapdata.js) for the map matcher, or null for none. */
-  constructor(worldDbc, radarDbc = null, { gearMsg = GEAR_MSG, mapData = null } = {}) {
-    this.world = new FiskerWorld(worldDbc);
+  constructor(worldDbc, radarDbc = null, { gearMsg = GEAR_MSG, mapData = null, staleS = undefined } = {}) {
+    this.world = new FiskerWorld(worldDbc, { staleS });
     this.radar = new FiskerRadar(radarDbc);
     this.gearMsg = gearMsg;
     this.model = new WorldModel();
