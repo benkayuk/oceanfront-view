@@ -11,7 +11,7 @@ import { encode } from '../../cancmd.js';
 import { extract, decodeFrame } from '../../carstate.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const ibus = new DBC(fs.readFileSync(path.join(here, '../../../../../../third_party/webhud/dbc/fisker_ocean_ibus.dbc'), 'latin1'));
+const ibus = new DBC(fs.readFileSync(path.join(here, '../../../../dbc/fisker_ocean_ibus.dbc'), 'latin1'));
 
 test('the IBUS DBC agrees with the ADAS-bus DBC on every shared signal', () => {
   const world = worldDbc();

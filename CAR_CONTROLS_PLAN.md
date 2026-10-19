@@ -29,7 +29,7 @@ Done:
   the car is back as modeled, so the HUD pays nothing for it with car mode closed.
 - `carcatalog.js` (15 categories) and `carcontrols.js` (ribbon, panels, badges, cards, chips, mock state),
   wired into `main.js`.
-- README section; `third_party/webhud/README.md` and `models/LICENSE.md` updated.
+- README section; `third_party/README.md` and `models/LICENSE.md` updated.
 
 Changes from the plan:
 - **The .blend:** the user's `FiskerOcean.blend` is the base model the Pulse glb was made from. It has every
@@ -390,7 +390,7 @@ narrow.
 - A short section on the car controls mockup: how to open it, what it shows, and that it's local-only.
 
 **New `tools/export_ocean_glb.py`, plus a new model file**
-- The bpy export script (see the Model section) and `third_party/webhud/models/pulse_ocean_v0.10_parts.glb`.
+- The bpy export script (see the Model section) and `third_party/models/pulse_ocean_v0.10_parts.glb`.
 - `test_server.py`'s model path is updated to the new glb.
 
 Untouched: the server, the Android app and the CAN override settings.

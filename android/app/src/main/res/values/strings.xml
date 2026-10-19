@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">sunnypilot HUD</string>
+    <string name="app_name">Oceanfront View</string>
     <string name="looking">Looking for sunnypilot</string>
     <string name="connecting_to">Connecting to %1$s</string>
     <string name="looking_hint">The comma joins the car\'s hotspot a minute or so after it starts. Web HUD must be on (Settings → Developer).</string>

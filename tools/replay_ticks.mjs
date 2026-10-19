@@ -18,9 +18,9 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const { DBC } = await import(path.join(here, '../static/js/world/dbc.js'));
 const { StateBuilder, wireFrames } = await import(path.join(here, '../static/js/world/state.js'));
 
-const THIRD_PARTY = path.join(here, '../../../third_party/webhud');
-const WORLD_DBC = path.join(THIRD_PARTY, 'dbc/fisker_ocean_adas_world.dbc');
-const RADAR_DBC = path.join(here, '../../../../opendbc_repo/opendbc/dbc/fisker_ocean_mrr.dbc');
+const ROOT = path.join(here, '..');
+const WORLD_DBC = path.join(ROOT, 'dbc/fisker_ocean_adas_world.dbc');
+const RADAR_DBC = path.join(ROOT, 'dbc/fisker_ocean_mrr.dbc');
 
 const args = process.argv.slice(2);
 const diff = args[0] === '--diff';

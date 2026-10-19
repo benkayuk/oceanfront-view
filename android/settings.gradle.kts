@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "sunnypilot-hud"
+rootProject.name = "oceanfront-view"
 include(":app")

@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """
-Generate the web HUD's Fisker DBC subset from the full ADASBUS matrix DBC.
+Generate the HUD's Fisker DBC subset (dbc/fisker_ocean_adas_world.dbc) from the full ADASBUS matrix DBC.
 
-  python -m openpilot.sunnypilot.webhud.tools.gen_world_dbc FM29_ADASBUS_Matrix_CANFD_V390.8_20230524.dbc
+  python3 tools/gen_world_dbc.py FM29_ADASBUS_Matrix_CANFD_V390.8_20230524.dbc
+
+The page decodes the comma bridge's stream with it. The bridge in sunnypilot keeps its own copy
+(openpilot/third_party/webhud/dbc/fisker_ocean_adas_world.dbc) and streams only the messages in it, so
+copy the result there too.
 
 Keeps every ADAS-authored message (world model, HMI, warnings, parking, DMS) plus the
 gateway-mirrored vehicle/body messages the HUD shows, with their comments, cycle times and
@@ -13,7 +17,8 @@ import argparse
 import os
 import re
 
-from openpilot.sunnypilot.webhud.paths import DBC_PATH as OUT
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OUT = os.path.join(ROOT, "dbc", "fisker_ocean_adas_world.dbc")
 
 # Non-ADAS messages to keep (everything opendbc's fisker_ocean_adas.dbc uses, plus body/HMI state and
 # the drive motors' torque requests and actual torque / speed for the power trails).

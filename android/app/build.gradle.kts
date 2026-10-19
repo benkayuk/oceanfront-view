@@ -4,39 +4,34 @@ plugins {
     id("com.android.application")
 }
 
-// The page and its files ship in the APK: copied here from the repo at build time, so the app and the
-// comma's bridge come from one checkout. webhud/ is one level up from android/; the third-party assets
-// and the radar DBC (opendbc) sit in the repo above it.
+// The page and its files ship in the APK: copied here from the checkout at build time. android/ sits
+// beside static/ (the page), third_party/ (three.js, the car model) and dbc/ (the three DBCs).
 abstract class SyncWebAssets @Inject constructor(private val fs: FileSystemOperations) : DefaultTask() {
     @get:InputDirectory abstract val staticDir: DirectoryProperty
     @get:InputDirectory abstract val threeDir: DirectoryProperty
     @get:InputDirectory abstract val modelsDir: DirectoryProperty
     @get:InputDirectory abstract val dbcDir: DirectoryProperty
-    @get:InputFile abstract val radarDbc: RegularFileProperty
     @get:OutputDirectory abstract val outDir: DirectoryProperty
 
     @TaskAction
     fun run() {
         fs.sync {
             into(outDir.dir("www"))
-            from(staticDir) { exclude("**/package.json") }
+            from(staticDir)
             from(threeDir) { into("vendor") }
             from(modelsDir) { into("models") }
             from(dbcDir) { into("dbc") }
-            from(radarDbc) { into("dbc") }
         }
     }
 }
 
-val webhudDir = rootProject.projectDir.resolve("..")
-val repoRoot = rootProject.projectDir.resolve("../../../..")
+val repoRoot = rootProject.projectDir.resolve("..")
 val syncWebAssets = tasks.register<SyncWebAssets>("syncWebAssets") {
     description = "Copies the HUD page, three.js, the car model and the DBCs into the APK's assets"
-    staticDir.set(webhudDir.resolve("static"))
-    threeDir.set(repoRoot.resolve("openpilot/third_party/webhud/three"))
-    modelsDir.set(repoRoot.resolve("openpilot/third_party/webhud/models"))
-    dbcDir.set(repoRoot.resolve("openpilot/third_party/webhud/dbc"))
-    radarDbc.set(repoRoot.resolve("opendbc_repo/opendbc/dbc/fisker_ocean_mrr.dbc"))
+    staticDir.set(repoRoot.resolve("static"))
+    threeDir.set(repoRoot.resolve("third_party/three"))
+    modelsDir.set(repoRoot.resolve("third_party/models"))
+    dbcDir.set(repoRoot.resolve("dbc"))
     outDir.set(layout.buildDirectory.dir("generated/webhud_assets"))
 }
 

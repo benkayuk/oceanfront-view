@@ -1,9 +1,52 @@
-# sunnypilot web HUD
+# Oceanfront View
 
-A Tesla-style car view for a browser on the same network as the comma device — built for the Fisker
-Ocean's own center screen. Shows speed, gear, MADS steering state, ACC set speed and time gap, speed
-limit, alerts, the ADAS module's lane lines and object list in 3D, parking sensors, and lets you edit
-the CAN overrides in `opendbc/car/fisker/values.py` and replay recorded routes.
+A Tesla-style car view for the Fisker Ocean's own center screen: a web page with a 3D model of the car,
+the lanes, cars, signs and lights its ADAS sees, the road from the map, the car's own state and
+controls, music and navigation. It runs standalone, on the car's screen or in a browser, and shows the
+driving data when a comma device running [sunnypilot](https://github.com/moistpope/sunnypilot) feeds it.
+
+## How it runs
+
+**Standalone.** Everything the HUD is happens in the page: `static/` is plain ES modules with no build
+step, and the CAN decoding, the sensor fusion, the pose estimate and the map matching run in a web worker
+(`static/js/world/`). On the car the Android app in [`android/`](android/README.md) carries the page in its
+APK, serves it to its own WebView, reads the car's IBUS1/IBUS2 through Pulse's CAN controllers and feeds
+them to the page, so the car, its controls, the live read-out, music and navigation work with nothing
+else present. On a PC, `python3 serve.py` serves the same page at `http://localhost:18088` with the same
+URL layout (`/`, `/vendor/`, `/models/`, `/dbc/`).
+
+**Fed by the comma bridge.** The driving data comes from sunnypilot's `webhud` process on the comma
+(`openpilot/sunnypilot/webhud/server.py` there, *Settings → Developer → Web HUD*, port 8088). It is a
+bridge: it reads the ADAS bus, the radar's private bus and openpilot's own services and streams them as
+they are, in ticks at 20 Hz over a WebSocket (`/ws`): raw CAN frames allowlisted by message (the set in
+`dbc/fisker_ocean_adas_world.dbc`, which both sides keep a copy of), and openpilot's services in compact
+form. Its REST API (`/api/...`) carries status, replay of recorded routes, the editable CAN overrides and
+a few params, and `/map/...` fetches OSM road tiles. The Android app finds the comma on the head unit's
+hotspot and relays `/api` and `/ws` to it; `serve.py --bridge sunnypilot.local` does the same on a PC.
+Without a bridge the page runs *offline*: the car and its controls stay, the driving data leaves the
+screen until the link is back.
+
+| Path | What |
+|------|------|
+| `static/` | the page: `index.html`, `app.css`, `design.css`, `sw.js`, `js/` (view, car controls, infotainment), `js/world/` (worker: DBC decoding, world model, pose, map) and its Node tests |
+| `android/` | the app for the car's screen (Kotlin, a local server, the CAN helper in Go) |
+| `dbc/` | `fisker_ocean_adas_world.dbc` (the ADASBUS subset the page decodes and the bridge streams; `tools/gen_world_dbc.py`), `fisker_ocean_ibus.dbc` (IBUS1/IBUS2 for the car-only view; `tools/gen_ibus.py`), `fisker_ocean_mrr.dbc` (the radar, reverse-engineered; a copy of opendbc's) |
+| `third_party/` | three.js r160 and the Pulse Ocean model (`third_party/README.md`) |
+| `tools/` | the DBC generators, the Blender export of the model, and the Node tools that record and replay the bridge's tick stream |
+| `serve.py` | dev server: the page, with `--bridge` relaying `/api`, `/ws` and `/map` to a comma |
+| `DESIGN.md`, `CAR_CONTROLS_PLAN.md` | the design language of the car controls and the plan they were built from |
+
+```
+python3 serve.py --bridge sunnypilot.local     # then open http://localhost:18088
+npm test                                       # node --test static/js/world/tests/*.test.js
+cd android && ./gradlew assembleRelease        # the APK (JDK 17+, Android SDK)
+```
+
+## What it shows
+
+Speed, gear, MADS steering state, ACC set speed and time gap, speed limit, alerts, the ADAS module's
+lane lines and object list in 3D, parking sensors, and the comma's CAN overrides
+(`opendbc/car/fisker/values.py`) and replay of recorded routes, through the bridge.
 
 The ego car mirrors the real one: a detailed, rigged Ocean model (Pulse Ocean v0.10, at its true
 size in meters) in any of the factory paints and five wheel options (Settings > Display). A fine
@@ -88,7 +131,7 @@ is a degree or two.
 private CAN-FD link on panda bus 1 (`static/js/world/fisker_radar.js`), drawn as see-through teal cars with a ring on
 the ground at the point each track reports. It's there to check the radar decoding against the
 camera's cars before the radar feeds openpilot. The radar's messages aren't in the FM29 matrix:
-`opendbc/dbc/fisker_ocean_mrr.dbc` is reverse-engineered from a drive, and its comments
+`dbc/fisker_ocean_mrr.dbc` (a copy of opendbc's) is reverse-engineered from a drive, and its comments
 say how each scale was checked and which are still open. Tracks are drawn close to raw (each 65 ms
 cycle's position, carried on the radar's own velocity for at most a cycle), so a scale or sign error
 shows up as an offset from the camera's car; like those cars, a car ahead sits with its rear on the
@@ -170,7 +213,7 @@ the gateway broadcasts there and forwards every frame to the page (see
 - **The HUD without the comma.** The gateway mirrors the ADAS bus onto IBUS2 for the head unit, with the
   same layout and signal names, and IBUS1 carries speed, gear, steering, yaw and the body. The page's
   world-model worker keeps a second decoder fed from these frames, with a DBC generated from the IBUS
-  matrices (`third_party/webhud/dbc/fisker_ocean_ibus.dbc`, `tools/gen_ibus.py`): the status card,
+  matrices (`dbc/fisker_ocean_ibus.dbc`, `tools/gen_ibus.py`): the status card,
   lanes, objects, signs, lights and parking sensors all work from the car alone (no openpilot, no radar).
   Whenever the comma's ticks aren't coming, this view takes over (*CAR* in the mode chip); with nothing
   at all, the driving data comes off the screen and the car controls, music and navigation carry on.
@@ -324,11 +367,11 @@ once. It needs a secure context, such as `localhost`; a plain `http://sunnypilot
 HTTP cache instead. The Android app serves everything from its own APK and doesn't use it. The
 day/night theme is applied from the saved setting before the first paint.
 
-**Open:** `http://sunnypilot.local:8088` (or `http://<device-ip>:8088`; port 80 is also served when
-the process is allowed to bind it). Toggle: *Settings → Developer → Web HUD* (`EnableWebHud`, on by
-default). On the car's own screen, where the comma joins the head unit's hotspot and `.local` names
-don't resolve, use the Android app in [`android/`](android/README.md): it finds the comma on the
-hotspot, runs the HUD full screen and rides out dropouts.
+**Open:** on the car's own screen, the Android app in [`android/`](android/README.md): it finds the
+comma on the hotspot (where `.local` names don't resolve), runs the HUD full screen and rides out
+dropouts. In a browser, `python3 serve.py --bridge sunnypilot.local` (or the device's IP) and open
+`http://localhost:18088`. Either way the bridge must be on: *Settings → Developer → Web HUD*
+(`EnableWebHud`, on by default), port 8088 on the comma.
 
 ## Car controls
 
@@ -397,28 +440,34 @@ to close the seats (they cut through the cushions and backs as dark wedges), and
 (rig, materials, textures, animations) as it was:
 
 ```
-blender -b Pulse-Ocean-Master.blend --python openpilot/sunnypilot/webhud/tools/export_ocean_glb.py -- \
-  --glb Pulse-Ocean-ADAS.glb --out openpilot/third_party/webhud/models/pulse_ocean_v0.10_parts.glb
+blender -b Pulse-Ocean-Master.blend --python tools/export_ocean_glb.py -- \
+  --glb Pulse-Ocean-ADAS.glb --out third_party/models/pulse_ocean_v0.10_parts.glb
 ```
 
 ## Pieces
 
+The comma's half lives in sunnypilot under `openpilot/sunnypilot/webhud/`: `server.py` (the `webhud`
+process: stdlib `http.server` + WebSocket, the 20 Hz tick stream, the REST API; niced, reads nothing while
+no viewer is connected), `state.py` and `extract.py` (the frames and service extracts gathered since the
+last tick, and the latest of each for a viewer that just connected), `sources.py` (live cereal and
+rlog/qlog replay), `demo.py` (a synthetic drive that encodes real ADASBUS frames, `--demo` or *Playback →
+Play demo drive*), `dbc.py` (the twin of `static/js/world/dbc.js`, for the demo and the overrides' live
+values), `mdns.py` (`sunnypilot.local`), `maptiles.py`, `websocket.py`, and
+`selfdrive/car/can_overrides.py` behind the overrides API.
+
 | File | Role |
 |------|------|
-| `server.py` | Process entry point (`webhud` in process_config): the bridge. stdlib `http.server` + WebSocket, 20 Hz tick stream (raw frames + service extracts), REST API, static files. Niced; reads nothing while no browser is connected. |
-| `mdns.py` | Publishes `sunnypilot.local` as an alias + `_http._tcp` service through avahi's D-Bus API (jeepney); falls back to a built-in A-record responder. Doesn't change the device hostname. |
 | `static/js/world/fisker_world.js` | Realtime world model from ADASBUS (see below), in the page's worker. |
 | `static/js/world/fisker_radar.js` | Mid-range radar tracks from its private CAN (bus 1), decoded with the reverse-engineered `fisker_ocean_mrr.dbc`. Kept apart from ADASBUS: the radar reuses its IDs. |
 | `static/js/world/world_model.js` | Ego odometry and the multi-source object tracker behind the *World model* view. |
 | `static/js/world/state.js`, `worker.js` | Fold the bridge's ticks into the one snapshot the view renders; the worker hosts it all off the main thread. |
-| `extract.py`, `state.py` | openpilot/sunnypilot services → compact JSON; the frames and extracts gathered since the last tick, and the latest of each for a viewer that just connected. |
-| `sources.py` | Live (cereal `can` + services) and rlog/qlog replay (zst/bz2, multi-segment, seek, speed). |
-| `demo.py` | Synthetic drive that encodes real ADASBUS frames — `server.py --demo` or *Playback → Play demo drive*. |
-| `dbc.py` | Small DBC reader/decoder (the demo encodes with it; the overrides page shows the ICC's live values through it). `static/js/world/dbc.js` is its twin in the page. |
-| `../selfdrive/car/can_overrides.py` | Validates/applies `FiskerCanOverrides`; card polls it at 10 Hz and updates the dicts carcontroller reads, in place. |
-| `static/` | The app (plain ES modules, no build step). three.js, the Ocean model and the DBC subset live in `openpilot/third_party/webhud/`. |
-| `tools/export_ocean_glb.py` | Rebuilds the Ocean model with its roof, sunroof, seats, windows and dash parts split out, for the car controls mockup (run in Blender). |
-| `android/` | The app for the car's screen (Pulse): carries the page in its APK, finds the comma on the hotspot and relays its API and stream, reads IBUS1/IBUS2. Not shipped to the comma. |
+| `static/js/world/dbc.js` | Small DBC reader/decoder: latest value of every signal at display rate, plus the metadata opendbc drops (value tables, comments, units, ranges) for the UI and the signal browser. |
+| `static/` | The app (plain ES modules, no build step). three.js and the Ocean model live in `third_party/`, the DBCs in `dbc/`. |
+| `serve.py` | Dev server for a browser: the page with the same URL roots as the app, `--bridge` relaying `/api`, `/ws` and `/map` to a comma. |
+| `tools/gen_world_dbc.py`, `tools/gen_ibus.py` | Generate the ADASBUS subset and the IBUS DBC (with `ibus_tables.js` and the app's `CanIds.kt`) from the FM29 matrices; the outputs are checked in. |
+| `tools/record_ticks.mjs`, `replay_ticks.mjs`, `pose_eval.mjs`, `map_eval.mjs` | Save a bridge's tick stream and run the worker's pipeline over it in Node, for the decoding, the fusion, the pose and the map matcher without a browser. |
+| `tools/export_ocean_glb.py` | Rebuilds the Ocean model with its roof, sunroof, seats, windows and dash parts split out, for the car controls (run in Blender). |
+| `android/` | The app for the car's screen (Pulse): carries the page in its APK, finds the comma on the hotspot and relays its API and stream, reads IBUS1/IBUS2. |
 
 ## ADASBUS signals used
 
@@ -444,8 +493,8 @@ Verify them on a drive with good lane confidence against the openpilot lanes (*L
 `GET /api/status`, `GET /api/routes`, `POST /api/replay {action: load|play|pause|toggle|seek|step|speed|live|demo, ...}`,
 `GET /map/tile/<lat>/<lon>/<name>` (an OSM road tile, fetched into mapd's folder on first use),
 `PUT /api/upload?name=<file>` (raw rlog/qlog body), `GET|PUT /api/params` (personality, experimental
-mode, units), `GET|PUT|DELETE /api/overrides`. Static: the page, `/vendor/`, `/models/` and `/dbc/`
-(the ADASBUS subset and the radar DBC, which the page decodes with). WebSocket `/ws`: the server sends
+mode, units), `GET|PUT|DELETE /api/overrides`. Static (the app and `serve.py`; the bridge serves `/dbc/` only, and the
+page with `WEBHUD_PAGE_DIR` set): the page, `/vendor/`, `/models/` and `/dbc/`. WebSocket `/ws`: the server sends
 `{type: hello}` then `{type: tick, data: {now, reset?, brand, can: [[t, [[addr, bus, hex], ...]], ...],
 op: [[service, t, extract], ...], mode, replay, server}}` at 20 Hz (the first tick for a new viewer is a
 snapshot of the latest frame of every message, with `reset`); the client sends `{type: replay, ...}`.
@@ -458,16 +507,26 @@ replay are refused while the car is moving (replay also stops itself if the car 
 ## Development
 
 ```
-python -m openpilot.sunnypilot.webhud.server --demo            # synthetic drive
-python -m openpilot.sunnypilot.webhud.server --replay <rlog.zst | segment dir | route dir>
-python -m openpilot.sunnypilot.webhud.tools.gen_world_dbc FM29_ADASBUS_Matrix_CANFD_V390.8_20230524.dbc
-pytest openpilot/sunnypilot/webhud/tests                        # the bridge
-node --test openpilot/sunnypilot/webhud/static/js/world/tests/*.test.js   # the page's decoding and world model
-node openpilot/sunnypilot/webhud/tools/record_ticks.mjs http://sunnypilot.local:8088 ticks.jsonl --seconds 120   # save a tick stream
-node openpilot/sunnypilot/webhud/tools/replay_ticks.mjs ticks.jsonl      # the same pipeline over a recorded tick stream
-node openpilot/sunnypilot/webhud/tools/pose_eval.mjs ticks.jsonl         # how the pose estimator did on it (fix innovations, heading, scale, lag)
-node openpilot/sunnypilot/webhud/tools/map_eval.mjs --tiles ~/.comma/media/0/osm/offline ticks.jsonl   # how the map matcher did (vs mapd's road name)
-python -m openpilot.sunnypilot.webhud.server --replay <rlog.zst> --map-root <dir of OSM cells>   # the map from somewhere other than mapd's folder
+python3 serve.py --bridge sunnypilot.local       # the page at http://localhost:18088, fed by the comma
+python3 serve.py --bridge 127.0.0.1:8088         # fed by a bridge on this PC (below); without --bridge the page runs offline
+node --test static/js/world/tests/*.test.js      # the page's decoding and world model (also: npm test)
+node tools/record_ticks.mjs http://sunnypilot.local:8088 ticks.jsonl --seconds 120   # save a bridge's tick stream
+node tools/replay_ticks.mjs ticks.jsonl          # the same pipeline over a recorded tick stream
+node tools/pose_eval.mjs ticks.jsonl             # how the pose estimator did on it (fix innovations, heading, scale, lag)
+node tools/map_eval.mjs --tiles ~/.comma/media/0/osm/offline ticks.jsonl   # how the map matcher did (vs mapd's road name)
+python3 tools/gen_world_dbc.py FM29_ADASBUS_Matrix_CANFD_V390.8_20230524.dbc   # regenerate dbc/fisker_ocean_adas_world.dbc (copy it to sunnypilot too)
+python3 tools/gen_ibus.py FM29_IBUS1_Matrix.xlsx FM29_IBUS2_Matrix.xlsx       # regenerate the IBUS DBC, ibus_tables.js and CanIds.kt
+cd android && ./gradlew assembleRelease          # the APK
 ```
 
-On a PC without the native params library, settings are kept in `~/.comma/webhud_dev_params.json`.
+A bridge on a PC, from a sunnypilot checkout (it serves no page of its own; point `serve.py --bridge` at it,
+or set `WEBHUD_PAGE_DIR` to this checkout and it serves the page too):
+
+```
+python -m openpilot.sunnypilot.webhud.server --demo                       # synthetic drive
+python -m openpilot.sunnypilot.webhud.server --replay <rlog.zst | segment dir | route dir>
+python -m openpilot.sunnypilot.webhud.server --replay <rlog.zst> --map-root <dir of OSM cells>   # the map from somewhere other than mapd's folder
+pytest openpilot/sunnypilot/webhud/tests                                  # the bridge's tests
+```
+
+On a PC without the native params library, the bridge keeps settings in `~/.comma/webhud_dev_params.json`.

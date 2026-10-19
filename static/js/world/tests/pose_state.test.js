@@ -11,7 +11,7 @@ import { StateBuilder } from '../state.js';
 import { worldDbc } from './helpers.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const ibusDbc = new DBC(fs.readFileSync(path.join(here, '../../../../../../third_party/webhud/dbc/fisker_ocean_ibus.dbc'), 'latin1'));
+const ibusDbc = new DBC(fs.readFileSync(path.join(here, '../../../../dbc/fisker_ocean_ibus.dbc'), 'latin1'));
 const LAT = 33.9883, LON = -83.3427;
 const DEG = Math.PI / 180, R = 6378137.0;
 

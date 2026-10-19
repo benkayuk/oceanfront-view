@@ -1,6 +1,6 @@
-# sunnypilot HUD for the car's screen
+# Oceanfront View on the car's screen
 
-An Android app that shows the [web HUD](../README.md) full screen on the car's own screen (Pulse,
+An Android app that shows the [HUD page](../README.md) full screen on the car's own screen (Pulse,
 the add-on board). Pulse runs the Wi-Fi hotspot the comma joins. The page and everything it needs
 (its scripts, three.js, the car model, the DBCs) ship inside the APK and are served by the app
 itself, so the HUD is up the moment the app starts and runs with or without the comma: the decoding
@@ -59,8 +59,8 @@ follows the car's day/night mode.
 ## Loading fast
 
 Nothing crosses Wi-Fi to start: the page, its scripts, three.js, the ~25 MB car model and the DBCs
-are in the APK (`build.gradle.kts` copies them from `webhud/static`, `openpilot/third_party/webhud`
-and opendbc into the assets at build time, stored uncompressed so the server streams them from a file
+are in the APK (`build.gradle.kts` copies them from `static/`, `third_party/` and `dbc/` at the top of
+the checkout into the assets at build time, stored uncompressed so the server streams them from a file
 descriptor). Each file carries an `ETag` that changes with every install, and the WebView's cache
 checks it with a `304` in between. The service worker a plain browser uses (`static/sw.js`) is not
 registered in the app, and one left by an earlier version is unregistered.
@@ -104,10 +104,10 @@ navigation ones in full at debug level, so it shows which app to add if none of 
 Pulse (the add-on SBC the app runs on) has two MCP251x CAN controllers wired to the car: `can1` =
 IBUS1, `can2` = IBUS2, both 500 kbit/s. The gateway broadcasts the body, climate, powertrain and
 battery status there all the time, and mirrors the ADAS bus onto IBUS2 for the head unit. The app
-reads the messages listed in `CanIds.kt` (generated from the matrices by `webhud/tools/gen_ibus.py`,
+reads the messages listed in `CanIds.kt` (generated from the matrices by `tools/gen_ibus.py`,
 with the page's `ibus_tables.js` and the IBUS DBC) and forwards every frame to the page: the car-state
 read-out decodes the body messages (`static/js/carstate.js`), the world-model worker decodes the ADAS
-mirror, so the HUD runs from the car alone when the comma is away (see the [web HUD README](../README.md)).
+mirror, so the HUD runs from the car alone when the comma is away (see the [main README](../README.md)).
 
 **Sending.** The page can send the head unit's own control messages (windows, lock, liftgate, sunroof,
 mirrors, lamps, climate, seat heat and moves, the locking settings) through `window.WebHudApp.canSend`.
@@ -158,7 +158,7 @@ or the SoC's own CAN controller) would help this and Pulse's own app.
 Needs JDK 17+ and the Android SDK (`ANDROID_HOME`, or `sdk.dir` in `local.properties`).
 
 ```
-cd openpilot/sunnypilot/webhud/android
+cd android
 ./gradlew assembleRelease        # app/build/outputs/apk/release/app-release.apk, ~28 MB (the page and the car model are in it)
 ./gradlew testDebugUnitTest      # JVM tests: subnet math, ARP parsing, status probe, sweep, relay
 adb install -r app/build/outputs/apk/release/app-release.apk
@@ -166,8 +166,8 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 
 Release builds are signed with the debug key, since the app is sideloaded, not published.
 
-The APK must be rebuilt for a change to the page (its files are copied in at build time); the comma
-serves the same files to a plain browser, so the two come from one checkout.
+The APK must be rebuilt for a change to the page (its files are copied in at build time); `serve.py` at
+the top of the checkout serves the same files to a plain browser.
 
 On Android Automotive, an app that isn't *distraction optimized* is blocked while driving. The
 activity declares `distractionOptimized`, but on user builds the car service only honors that for

@@ -2,8 +2,8 @@
 """
 Build the web HUD's Ocean model with its roof, sunroof, seats, windows, vents, screens and console as meshes of their own.
 
-  blender -b Pulse-Ocean-Master.blend --python openpilot/sunnypilot/webhud/tools/export_ocean_glb.py -- \\
-    --glb Pulse-Ocean-ADAS.glb --out openpilot/third_party/webhud/models/pulse_ocean_v0.10_parts.glb
+  blender -b Pulse-Ocean-Master.blend --python tools/export_ocean_glb.py -- \\
+    --glb Pulse-Ocean-ADAS.glb --out third_party/models/pulse_ocean_v0.10_parts.glb
 
 Both inputs come from the Pulse Ocean v0.10 package. Its app asset, Pulse-Ocean-ADAS.glb, merges the
 master's parts into one mesh per material and rig node: Body__PBR_glass_dark is the SolarSky glass, the

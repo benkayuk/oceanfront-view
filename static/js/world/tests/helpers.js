@@ -5,8 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { DBC } from '../dbc.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-export const WORLD_DBC_PATH = path.join(here, '../../../../../../third_party/webhud/dbc/fisker_ocean_adas_world.dbc');
-export const RADAR_DBC_PATH = path.join(here, '../../../../../../../opendbc_repo/opendbc/dbc/fisker_ocean_mrr.dbc');
+export const WORLD_DBC_PATH = path.join(here, '../../../../dbc/fisker_ocean_adas_world.dbc');
+export const RADAR_DBC_PATH = path.join(here, '../../../../dbc/fisker_ocean_mrr.dbc');
 
 let world = null, radar = null;
 export function worldDbc() { return world || (world = new DBC(fs.readFileSync(WORLD_DBC_PATH, 'latin1'))); }

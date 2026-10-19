@@ -15,8 +15,8 @@ const { DBC } = await import(path.join(here, '../static/js/world/dbc.js'));
 const { StateBuilder, wireFrames } = await import(path.join(here, '../static/js/world/state.js'));
 const { MapData } = await import(path.join(here, '../static/js/world/mapdata.js'));
 
-const THIRD_PARTY = path.join(here, '../../../third_party/webhud');
-const WORLD_DBC = path.join(THIRD_PARTY, 'dbc/fisker_ocean_adas_world.dbc');
+const ROOT = path.join(here, '..');
+const WORLD_DBC = path.join(ROOT, 'dbc/fisker_ocean_adas_world.dbc');
 
 const args = process.argv.slice(2);
 let tiles = path.join(process.env.HOME || '', '.comma/media/0/osm/offline');
