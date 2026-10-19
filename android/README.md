@@ -234,3 +234,16 @@ the app says so instead of trying. The script checks the APK's signer against th
 `adb logcat -s WebHud` shows how the comma was found, sweeps (debug level), losses and reloads, and
 the media session and navigation notification the HUD is showing. The
 WebView can be inspected from `chrome://inspect` on a computer with adb access to the head unit.
+
+## UK traffic and camera speed signs
+
+In Display → General, select **Traffic side → Left (UK)** and
+**Camera speed-sign units → mph**. Traffic side controls placement on two-way
+map roads and the side used for camera signs. Camera speed-sign units describe
+the incoming camera number; Speed units independently select its display units.
+For example, a UK 30 sign stays 30 with an mph display, or becomes 48 with a
+km/h display. Follow car uses the original CAN unit flag. These overrides are
+saved on the device and must be changed when the road/sign conventions change.
+
+These changes have automated JavaScript coverage; car hardware validation is
+still required.
