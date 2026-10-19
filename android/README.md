@@ -208,13 +208,26 @@ With root, `pm install` replaces the app silently and starts it again; without, 
 asks on screen (the first time, to allow this app to install apps). The HUD restarts either way, so
 installing is refused while the car moves.
 
-For a release to work as an update:
+### Cutting a release
 
-- bump `versionName` (to match the tag) and `versionCode` in `app/build.gradle.kts`, or the app keeps
-  offering the same release after installing it;
-- build it with the same debug key as the APKs already on cars (the `~/.android/debug.keystore` of
-  the machine that built them): Android won't install an APK signed by another key over the app, and
-  the app says so instead of trying.
+**Every release must bump the version**, or the cars never see it as an update (or keep offering the
+same one after installing it): `versionName` in `app/build.gradle.kts` to the release's version (the
+tag is `v<versionName>`), and `versionCode` up by one. `tools/release.sh` does that and the rest:
+
+```
+tools/release.sh                 # 1.0 -> 1.1: bump, run the tests, build, commit "Oceanfront View v1.1", tag v1.1
+tools/release.sh patch           # 1.1 -> 1.1.1 (or major, or a version: tools/release.sh 2.0)
+tools/release.sh --publish       # ...then push the commit and the tag and create the GitHub release with the APK (gh)
+```
+
+It wants a clean checkout, puts the version back if the tests or the build fail, and names the APK
+`app/build/outputs/apk/release/oceanfront-view-v<version>.apk`. Without `--publish` it prints the
+push and `gh release create` commands to run.
+
+Build releases with the same debug key as the APKs already on cars (the `~/.android/debug.keystore`
+of the machine that built them): Android won't install an APK signed by another key over the app, and
+the app says so instead of trying. The script checks the APK's signer against that key's SHA-256
+(`SIGNER` in the script) and stops before committing if it differs.
 
 ## Debugging
 

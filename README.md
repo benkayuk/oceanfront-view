@@ -46,7 +46,7 @@ carry on.
 | `android/` | the app for the car's screen (Kotlin, a local server, the CAN helper in Go, the comma's SSH management and its scripts in `app/src/main/assets/comma/`) |
 | `dbc/` | `fisker_ocean_adas_world.dbc` (the ADASBUS subset the page decodes and the bridge streams; `tools/gen_world_dbc.py`), `fisker_ocean_ibus.dbc` (IBUS1/IBUS2 for the car-only view; `tools/gen_ibus.py`), `fisker_ocean_mrr.dbc` (the radar, reverse-engineered; a copy of opendbc's) |
 | `third_party/` | three.js r160 and the Pulse Ocean model (`third_party/README.md`) |
-| `tools/` | the DBC generators, the Blender export of the model, and the Node tools that record and replay the bridge's tick stream |
+| `tools/` | the DBC generators, the Blender export of the model, the Node tools that record and replay the bridge's tick stream, and `release.sh` (cuts an app release, bumping its version) |
 | `serve.py` | dev server: the page, with `--bridge` relaying `/api`, `/ws` and `/map` to a comma |
 | `DESIGN.md`, `CAR_CONTROLS_PLAN.md` | the design language of the car controls and the plan they were built from |
 
@@ -56,7 +56,9 @@ npm test                                       # node --test static/js/world/tes
 cd android && ./gradlew assembleRelease        # the APK (JDK 17+, Android SDK)
 ```
 
-A built APK is attached to each [release](https://github.com/moistpope/oceanfront-view/releases).
+A built APK is attached to each [release](https://github.com/moistpope/oceanfront-view/releases), and the app updates itself
+from the latest one. Cut releases with `tools/release.sh`: it bumps the app's version, which every release needs
+for the cars to see it as an update ([android/README.md](android/README.md#cutting-a-release)).
 
 ## What it shows
 
@@ -562,6 +564,7 @@ node tools/map_eval.mjs --tiles ~/.comma/media/0/osm/offline ticks.jsonl   # how
 python3 tools/gen_world_dbc.py FM29_ADASBUS_Matrix_CANFD_V390.8_20230524.dbc   # regenerate dbc/fisker_ocean_adas_world.dbc (copy it to sunnypilot too)
 python3 tools/gen_ibus.py FM29_IBUS1_Matrix.xlsx FM29_IBUS2_Matrix.xlsx       # regenerate the IBUS DBC, ibus_tables.js and CanIds.kt
 cd android && ./gradlew assembleRelease          # the APK
+tools/release.sh                                 # a release: bump the app's version, test, build, commit and tag (--publish: push, GitHub release)
 ```
 
 A bridge on a PC, from a sunnypilot checkout (it serves no page of its own; point `serve.py --bridge` at it,
