@@ -97,4 +97,35 @@ describe('pose through StateBuilder', () => {
     bb.feedService('gpsLocationExternal', { lat: LAT, lon: LON, bearing: 0, speed: 20, fix: true }, 3.05);
     assert.equal(bb.pose.fixes, before);
   });
+
+  test("position source 'device': the screen's fixes place the car and the TBOX's are ignored", () => {
+    const b = new StateBuilder(ibusDbc, null, { gearMsg: 0x234 });
+    b.setBrand('fisker');
+    b.setPositionSource('device');
+    const enc = (addr, values) => ibusDbc.messages.get(addr).encode(values);
+    const v = 20, kph = v / 1.031 * 3.6;
+    for (let t = 0; t <= 8 + 1e-9; t += 0.01) {
+      const frames = [[0x318, enc(0x318, { ESP_VehSpd: kph, ESP_VehSpdVld: 1 }), 0], [0x112, enc(0x112, { YRS_YawRate: 0.0 }), 0],
+                      [0x234, enc(0x234, { VCU_GearSig: 4 }), 0]];
+      const tick = Math.round(t * 100) % 10 === 0;
+      // a faulty TBOX: a fix a kilometer off and a heading east, both of which must be ignored
+      if (tick) frames.push([0x526, enc(0x526, { TBOX_GPSLati: LAT + 0.01, TBOX_GPSLongi: LON }), 2], [0x179, enc(0x179, { TBOX_Heading: 90.0, TBOX_HeadingStdDev: 0.15 }), 0]);
+      b.feedCan(frames, t);
+      // the screen's own fixes at 10 Hz, received 0.3 s after they were taken (the measured age is the lag)
+      if (tick && t >= 0.3) {
+        const tf = t - 0.3;
+        b.feedLocation({ lat: LAT + v * tf / (DEG * R), lon: LON, acc: 3, speed: v, bearing: 0, fixT: tf }, t);
+      }
+    }
+    const p = b.snapshot(8).pose;
+    assert.equal(p.quality, 'gps');
+    assert.ok(Math.abs(p.y - 160) < 1.0 && Math.abs(p.x) < 0.5, `${p.x}, ${p.y}`);
+    assert.ok(Math.abs(p.h - Math.PI / 2) < 0.03, `heading ${p.h}`);   // north, from the direction of travel
+    assert.ok(Math.abs(p.lat - (LAT + 160 / (DEG * R))) < 1e-5);
+    // back on the car's source the screen's fixes are ignored
+    b.setPositionSource('car');
+    const before = b.pose.fixes;
+    b.feedLocation({ lat: LAT, lon: LON, acc: 3, fixT: 8.0 }, 8.05);
+    assert.equal(b.pose.fixes, before);
+  });
 });

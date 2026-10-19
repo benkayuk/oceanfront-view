@@ -27,6 +27,9 @@ const GEAR_REVERSE = 3;       // VCU_GearSig
 const GPS_MSG = 0x526, HEADING_MSG = 0x179, INS_MSG = 0x174, GPS_FIX_MSG = 0x46F, GPS_ACC_MSG = 0x472;
 const GPS_CAN_S = 1.0;        // the comma's GPS stands in once the car's own hasn't been seen for this long
 const GPS_SERVICES = new Set(['gpsLocationExternal', 'gpsLocation']);
+// The screen's own location (the Android device the page runs on, LocationManager) in place of the TBOX, for cars
+// whose telematics box gives no position: its age is measured, so its lag is taken as measured when plausible
+const DEVICE_LAG_S = [0.05, 2.0];
 // the roads around the car for the view's map layer: every drivable way within ROADS_R, rebuilt once the car has
 // moved ROADS_STEP from the last build (or the tiles changed), and sent only then
 const ROADS_R = 320, ROADS_STEP = 40;
@@ -71,6 +74,7 @@ export class StateBuilder {
     this._adasFed = new Map();
     this._rsFed = null;
     this._turnAt = null;
+    this.positionSource = 'car';   // 'car': the TBOX's GPS, heading and velocity; 'device': the screen's location
   }
 
   reset() {
@@ -101,8 +105,23 @@ export class StateBuilder {
       this.world.update(frames, t);
       this.radar.update(frames, t);
       this._odometryFromCan(t);
-      this._gpsFromCan(t);
+      if (this.positionSource === 'car') this._gpsFromCan(t);
     }
+  }
+
+  /** Where the pose's fixes and heading come from: 'car' (the TBOX on CAN) or 'device' (feedLocation). */
+  setPositionSource(src) { this.positionSource = src === 'device' ? 'device' : 'car'; }
+
+  /** A fix from the screen's own location, received at t (page clock, s): {lat, lon, acc (m), speed (m/s), bearing
+   *  (deg clockwise from north), fixT (when it was taken, same clock)}. Ignored unless the position source is 'device'.
+   *  It stands where the TBOX's fixes do: the comma's GPS takes over only once these stop. */
+  feedLocation(fix, t) {
+    if (this.positionSource !== 'device' || !fix) return;
+    this.t = Math.max(this.t, t);
+    const age = fix.fixT != null ? t - fix.fixT : null;
+    const lag = age !== null && age >= DEVICE_LAG_S[0] && age <= DEVICE_LAG_S[1] ? age : null;   // else the estimator's own
+    this.pose.gps(t, fix.lat, fix.lon, { accuracy: fix.acc ?? null, speed: fix.speed ?? null, bearing: fix.bearing ?? null, lag });
+    this._gpsCanT = t;
   }
 
   _odometryFromCan(t) {

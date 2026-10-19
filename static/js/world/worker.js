@@ -14,6 +14,9 @@
 //               {type:'raw', source, addrs}          which messages the signal browser watches: source 'ibus' (the car's
 //                                                    buses) or 'adas' (the comma's ADAS bus); [] for none
 //               {type:'calibration', on}             the world model's measured sensor calibration on/off
+//               {type:'position', source}            where the pose's fixes come from: 'car' (the TBOX) or 'device' (below)
+//               {type:'location', t, fix}            a fix from the screen's own location, through the Android app
+//                                                    ({lat, lon, acc, speed, bearing, fixT}, fixT and t on the Date.now()/1000 clock)
 // Messages out: {type:'state', data}                 the comma's own snapshot (replay, or no car buses)
 //               {type:'local', data}                 the car's view: 10 Hz from IBUS alone, at the tick rate with the comma
 //                                                    merged in (data.comma true then; mode 'car')
@@ -66,6 +69,7 @@ let rawAddrs = [];
 let rawSource = 'ibus';
 let rawNext = 0;
 let calibrationOn = true;
+let positionSource = 'car';
 let early = [];
 
 self.onmessage = (ev) => {
@@ -75,11 +79,13 @@ self.onmessage = (ev) => {
       builder = new StateBuilder(new DBC(msg.worldDbc), msg.radarDbc ? new DBC(msg.radarDbc) : null, { mapData: new MapData(fetchTile, fetchFeatures, fetchPrefetch) });
       builder.map.setPrefetchKm(prefetchKm);
       builder.setCalibration(calibrationOn);
+      builder.setPositionSource(positionSource);
       if (msg.ibusDbc) {
         local = new StateBuilder(new DBC(msg.ibusDbc), msg.radarDbc ? new DBC(msg.radarDbc) : null,
           { gearMsg: 0x234, staleS: LOCAL_STALE_S, mapData: new MapData(fetchTile, fetchFeatures, fetchPrefetch) });
         local.map.setPrefetchKm(prefetchKm);
         local.setCalibration(calibrationOn);
+        local.setPositionSource(positionSource);
         local.setBrand('fisker');
         merge = new CommaMerge(local);
         setInterval(() => { if (Date.now() / 1000 - localPostT > LOCAL_GAP_S) localTick(); }, 1000 / LOCAL_HZ);   // merged ticks post their own
@@ -109,6 +115,12 @@ self.onmessage = (ev) => {
       calibrationOn = !!msg.on;
       if (builder) builder.setCalibration(calibrationOn);
       if (local) local.setCalibration(calibrationOn);
+    } else if (msg.type === 'position') {
+      positionSource = msg.source === 'device' ? 'device' : 'car';
+      if (builder) builder.setPositionSource(positionSource);
+      if (local) local.setPositionSource(positionSource);
+    } else if (msg.type === 'location') {
+      if (local) local.feedLocation(msg.fix, msg.t);   // the car's own view only: the comma's replays have fixes of their own
     } else if (msg.type === 'mapPrefetch') {
       prefetchKm = Number(msg.km) || 0;
       if (builder && builder.map) builder.map.setPrefetchKm(prefetchKm);

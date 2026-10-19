@@ -25,7 +25,7 @@ const DEFAULTS = {
   showTracks: true, showRadar: false, radarAllTracks: false, showLowConf: false, showObjectStats: false, objectMode: 'world',
   laneHeadingSign: 1, laneCurvatureSign: 1, objectHeadingSign: 1, laneConfThreshold: LANE_CONF_THRESHOLD,
   showFps: true, renderScale: 'auto', showMusic: true, showNav: true, demoInfotainment: false, demoCarState: false,
-  calibration: true, mapPrefetchKm: 25,
+  calibration: true, mapPrefetchKm: 25, positionSource: 'car',
 };
 
 function loadSettings() {
@@ -103,6 +103,10 @@ class App {
     this.cmd = new CarCommands(this);   // sending to the car, through the app
     // every frame the app reads on the car's buses also goes to the worker, which keeps the car's own view of the world
     window.addEventListener('webhud:can', (e) => { if (this.worker && Array.isArray(e.detail)) this.worker.postMessage({ type: 'ibus', t: Date.now() / 1000, frames: e.detail }); });
+    // the screen's own location, while the position source is 'device' (the app only sends it then)
+    this.deviceFix = null;         // the last one, or {error}, with rx (Date.now()) for the settings' status
+    window.addEventListener('webhud:location', (e) => this.onDeviceLocation(e.detail));
+    this.applyPositionSource();
     let last = performance.now();
     const loop = (now) => {
       requestAnimationFrame(loop);   // schedule first: one bad frame must not stop the HUD
@@ -144,6 +148,7 @@ class App {
     if (key === 'demoCarState') this.carState.apply();
     if (key === 'calibration') this.worker.postMessage({ type: 'calibration', on: value });
     if (key === 'mapPrefetchKm') this.worker.postMessage({ type: 'mapPrefetch', km: Number(value) });
+    if (key === 'positionSource') this.applyPositionSource();
     if (!this.car.apa) this.scene.update(this.state, this.settings);
     if (this.ui.isOpen && this.ui.tab === 'display') this.ui.show('display', true);
   }
@@ -156,6 +161,25 @@ class App {
     this.scene.setTheme(dark);
     // the Android app starts in this theme next time (its loading screen and background), see MainActivity
     try { window.WebHudApp?.setTheme(t); } catch { /* not in the app */ }
+  }
+
+  // ---- position source ------------------------------------------------------------------------------
+  // 'car': the telematics box's GPS and heading on CAN; 'device': the location of the Android device the page runs
+  // on, for cars whose TBOX gives no position. The app starts or stops its location updates to match (MainActivity).
+  applyPositionSource() {
+    const device = this.settings.positionSource === 'device';
+    if (!device) this.deviceFix = null;
+    if (this.worker) this.worker.postMessage({ type: 'position', source: device ? 'device' : 'car' });
+    try { window.WebHudApp?.setLocation?.(device); } catch { /* not in the app */ }
+  }
+
+  /** A fix from the app: {lat, lon, acc, speed, bearing (null when it has none), at (epoch ms it was taken)}, or {error}. */
+  onDeviceLocation(d) {
+    if (!d || this.settings.positionSource !== 'device') return;
+    this.deviceFix = { ...d, rx: Date.now() };
+    if (d.error || !this.worker) return;
+    this.worker.postMessage({ type: 'location', t: Date.now() / 1000,
+      fix: { lat: d.lat, lon: d.lon, acc: d.acc ?? null, speed: d.speed ?? null, bearing: d.bearing ?? null, fixT: d.at != null ? d.at / 1000 : null } });
   }
 
   updateLayout() {
@@ -201,6 +225,7 @@ class App {
     };
     w.postMessage({ type: 'calibration', on: this.settings.calibration !== false });
     w.postMessage({ type: 'mapPrefetch', km: Number(this.settings.mapPrefetchKm ?? 25) });
+    w.postMessage({ type: 'position', source: this.settings.positionSource });
     const text = (path, required) => fetch(path, { cache: 'no-cache' }).then(r => { if (!r.ok) throw new Error(`${path}: ${r.status}`); return r.text(); })
       .catch(e => { if (required) throw e; return null; });
     const load = () => Promise.all([text('/dbc/fisker_ocean_adas_world.dbc', true), text('/dbc/fisker_ocean_mrr.dbc', false), text('/dbc/fisker_ocean_ibus.dbc', false)])
@@ -369,7 +394,7 @@ class App {
     this.lastStateAt = performance.now();
     if (!this.car.apa) this.scene.update(state, this.settings);
     this.updateRadarChip();
-    if (this.ui.isOpen && this.ui.tab === 'display') this.ui.showLaneConf();
+    if (this.ui.isOpen && this.ui.tab === 'display') { this.ui.showLaneConf(); this.ui.showPositionStatus(); }
     this.autoView(state);
   }
 

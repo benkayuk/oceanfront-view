@@ -41,7 +41,8 @@ import org.json.JSONObject
  * when the comma is found, reloads it if it failed to load, and replaces the WebView if its renderer dies.
  * Nothing on screen waits for the comma or says it's missing.
  * It also hands the page what the head unit is playing and its next turn ([Infotainment]) and the
- * car's CAN state ([CanBridge]). Back opens a small menu. [HudService] keeps the process alive.
+ * car's CAN state ([CanBridge]), and, when the page's position source is this screen, its location
+ * ([DeviceLocation]). Back opens a small menu. [HudService] keeps the process alive.
  */
 class MainActivity : Activity(), Link.Listener, Infotainment.Listener, CanBridge.Listener {
 
@@ -60,6 +61,9 @@ class MainActivity : Activity(), Link.Listener, Infotainment.Listener, CanBridge
     private var reloads = 0           // reloads in a row, for backoff
     private var fileCallback: ValueCallback<Array<Uri>>? = null
     private var forcedNight: Boolean? = null   // started in the page's own day/night instead of the car's
+    private lateinit var location: DeviceLocation
+    private var locationWanted = false         // the page's position source is this screen (PageBridge.setLocation)
+    private var started = false                // between onStart and onStop: location updates run only then
 
     private val retryLoad = Runnable { load() }
 
@@ -111,6 +115,12 @@ class MainActivity : Activity(), Link.Listener, Infotainment.Listener, CanBridge
         @JavascriptInterface
         fun canState(): String = CanBridge.snapshot()
 
+        /** The page's position source is this screen (true) or the car's telematics box: start or stop the location. */
+        @JavascriptInterface
+        fun setLocation(on: Boolean) {
+            ui.post { setLocationWanted(on) }
+        }
+
         /** The secret the page sends with its requests to the app's own API (/app/comma, CommaManager). */
         @JavascriptInterface
         fun appToken(): String = link.comma.token
@@ -145,6 +155,7 @@ class MainActivity : Activity(), Link.Listener, Infotainment.Listener, CanBridge
         WebView.setWebContentsDebuggingEnabled(true)   // chrome://inspect over adb, for work on the HUD itself
 
         link = Link.get(this)
+        location = DeviceLocation(this) { json -> sendLocation(json) }
         HudListener.grantInBackground(this, link.root)
         HudService.start(this)   // also starts the CAN reader
         createWebView()
@@ -161,9 +172,13 @@ class MainActivity : Activity(), Link.Listener, Infotainment.Listener, CanBridge
         Infotainment.addListener(this)
         CanBridge.addListener(this)
         if (page == Page.LOADED) reloadInfotainment()   // what changed while the HUD was away
+        started = true
+        if (locationWanted && location.hasPermission()) startLocation()
     }
 
     override fun onStop() {
+        started = false
+        location.stop()
         Infotainment.removeListener(this)
         CanBridge.removeListener(this)
         link.detach(this)
@@ -219,6 +234,39 @@ class MainActivity : Activity(), Link.Listener, Infotainment.Listener, CanBridge
                 web?.evaluateJavascript("window.dispatchEvent(new CustomEvent('webhud:can',{detail:$json}))", null)
             }
         }
+    }
+
+    // ---- the screen's location ----------------------------------------------------------------------
+
+    private fun setLocationWanted(on: Boolean) {
+        locationWanted = on
+        if (!on) {
+            location.stop()
+        } else if (!location.hasPermission()) {
+            requestPermissions(DeviceLocation.PERMISSIONS, REQUEST_LOCATION)
+        } else if (started) {
+            startLocation()
+        }
+    }
+
+    private fun startLocation() {
+        location.start()?.let { sendLocation(DeviceLocation.error(it)) }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != REQUEST_LOCATION || !locationWanted) return
+        if (location.hasPermission()) {
+            if (started) startLocation()
+        } else {
+            sendLocation(DeviceLocation.error("Location permission denied: allow it for the HUD app in the screen's settings."))
+        }
+    }
+
+    // on the main thread (DeviceLocation's updates come on the main looper)
+    private fun sendLocation(json: String) {
+        if (page != Page.LOADED) return   // the page asks again (setLocation) when it starts
+        web?.evaluateJavascript("window.dispatchEvent(new CustomEvent('webhud:location',{detail:$json}))", null)
     }
 
     // ---- page ---------------------------------------------------------------------------------------
@@ -442,6 +490,7 @@ class MainActivity : Activity(), Link.Listener, Infotainment.Listener, CanBridge
         const val MAX_RELOAD_DELAY_MS = 30_000L
         const val ASSET_LOAD_WINDOW_MS = 30_000L
         const val REQUEST_FILE = 1
+        const val REQUEST_LOCATION = 2
         const val PREFS = "page"
         const val PREF_THEME = "theme"   // the page's theme setting: auto, light or dark
         val THEMES = setOf("auto", "light", "dark")

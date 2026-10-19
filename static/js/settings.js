@@ -245,7 +245,7 @@ export class Settings {
   // split into sections picked from a bar at the top, so no page is one long list
   renderDisplay() {
     const sec = this.displaySection;
-    this.laneConfNow = null;   // only the Road section shows it
+    this.laneConfNow = this.positionNow = null;   // only the Road section shows them
     this.body.append(el('div.subnav', this.app.segmented([['general', 'General'], ['road', 'Road'], ['objects', 'Objects'], ['debug', 'Debug']], sec,
       v => { this.displaySection = v; this.show('display'); })));
     ({ general: () => this.displayGeneral(), road: () => this.displayRoad(), objects: () => this.displayObjects(), debug: () => this.displayDebug() })[sec]();
@@ -326,6 +326,31 @@ export class Settings {
       this.app.segmented([['0', 'Off'], ['10', '10 km'], ['25', '25 km'], ['50', '50 km'], ['100', '100 km']], String(s.mapPrefetchKm ?? 25), v => set('mapPrefetchKm', Number(v))),
       this.mapStatus));
     this.showMapStatus();
+    // where the pose's fixes and heading come from (state.js setPositionSource)
+    this.positionNow = el('small.cur', '');
+    body.append(el('div.section', el('h3', 'Position'),
+      el('p.desc', 'Where the car is placed on the map from. Car: the telematics box\'s GPS and heading on the car\'s buses. ' +
+        'This screen: the location of the Android device the HUD runs on, for cars whose telematics box gives no position; ' +
+        'its heading then comes from the direction of travel, so the map turns into place once the car is moving. ' +
+        'Needs the HUD\'s Android app and its location permission.'),
+      this.app.segmented([['car', 'Car'], ['device', 'This screen']], s.positionSource === 'device' ? 'device' : 'car', v => set('positionSource', v)),
+      this.positionNow));
+    this.showPositionStatus();
+  }
+
+  /** The position source's state: the screen's last fix, or what's wrong. */
+  showPositionStatus() {
+    const out = this.positionNow;
+    if (!out) return;
+    const app = this.app;
+    if (app.settings.positionSource !== 'device') { out.textContent = 'From the telematics box.'; return; }
+    if (!window.WebHudApp?.setLocation) { out.textContent = 'Needs the HUD\'s Android app on the car\'s screen.'; return; }
+    const f = app.deviceFix;
+    if (!f) { out.textContent = 'Waiting for a fix from this screen.'; return; }
+    if (f.error) { out.textContent = f.error; return; }
+    const age = (Date.now() - (f.at ?? f.rx)) / 1000;
+    out.textContent = age > 5 ? `No fix for ${Math.round(age)} s.`
+      : `Fix ${f.acc != null ? `\u00b1${Math.round(f.acc)} m` : ''}, ${age.toFixed(1)} s old` + (f.bearing != null ? `, heading ${Math.round(f.bearing)}\u00b0` : '');
   }
 
   /** What the server has of the map around the car (GET /map/status). */
