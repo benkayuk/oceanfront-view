@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#eceef1">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>sunnypilot HUD</title>
+<title>Oceanfront View</title>
 <script>
   // Day/night before the first paint: the last theme setting, read here so the page doesn't show light
   // while its scripts and the car model load (main.js applies it again, and tells the Android app).
@@ -58,7 +58,7 @@
   <!-- connection / mode chips -->
   <div id="chips" class="chips">
     <span id="chip-mode" class="chip">LIVE</span>
-    <span id="chip-conn" class="chip warn">connecting…</span>
+    <button id="chip-conn" class="chip ok hidden" type="button">comma</button>
     <span id="chip-radar" class="chip hidden"></span>
   </div>
 
@@ -108,11 +108,12 @@
   <aside id="settings" class="sheet hidden" aria-hidden="true">
     <header>
       <nav id="tabs">
-        <button data-tab="overrides" class="on">CAN settings</button>
-        <button data-tab="driving">Driving</button>
-        <button data-tab="display">Display</button>
-        <button data-tab="playback">Playback</button>
+        <button data-tab="display" class="on">Display</button>
         <button data-tab="signals">Signals</button>
+        <button data-tab="comma">Comma</button>
+        <button data-tab="overrides">CAN settings</button>
+        <button data-tab="driving">Driving</button>
+        <button data-tab="playback">Playback</button>
         <button data-tab="about">About</button>
       </nav>
       <button id="settings-close" class="icon close" aria-label="Close"></button>

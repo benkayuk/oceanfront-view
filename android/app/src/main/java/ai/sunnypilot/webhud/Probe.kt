@@ -39,6 +39,31 @@ object Probe {
         null   // unresolvable or malformed host typed by hand
     }
 
+    /**
+     * One JSON request to the comma's bridge (its REST API), over a raw socket like the probes: the app's network
+     * config allows cleartext HTTP only to its own server. The status code and body, or null if it can't be reached.
+     */
+    fun request(host: String, port: Int, method: String, path: String, body: String? = null, timeoutMs: Int = 8000): Pair<Int, String>? = try {
+        Socket().use { s ->
+            s.tcpNoDelay = true
+            s.connect(InetSocketAddress(host, port), timeoutMs)
+            s.soTimeout = timeoutMs
+            val payload = body?.toByteArray() ?: ByteArray(0)
+            val head = StringBuilder("$method $path HTTP/1.1\r\nHost: $host:$port\r\nConnection: close\r\n")
+            if (body != null) head.append("Content-Type: application/json\r\nContent-Length: ${payload.size}\r\n")
+            head.append("\r\n")
+            s.getOutputStream().apply { write(head.toString().toByteArray()); write(payload); flush() }
+            val text = String(readCapped(s.getInputStream()), Charsets.UTF_8)
+            val split = text.indexOf("\r\n\r\n")
+            val code = text.substringBefore("\r\n").split(' ').getOrNull(1)?.toIntOrNull()
+            if (split < 0 || code == null) null else code to text.substring(split + 4)
+        }
+    } catch (e: IOException) {
+        null
+    } catch (e: IllegalArgumentException) {
+        null
+    }
+
     /** The device described by a raw HTTP response, if it's a 200 with the HUD server's status. */
     fun parseStatus(raw: ByteArray, host: String, port: Int): Device? {
         val text = String(raw, Charsets.UTF_8)

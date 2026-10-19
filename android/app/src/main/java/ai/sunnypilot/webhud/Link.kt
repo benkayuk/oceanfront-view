@@ -12,8 +12,10 @@ import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 
 /**
- * Finds the comma's HUD server on the hotspot and keeps watching it, on its own thread. Lives as long
- * as the process, so recreating the activity (day/night switch) doesn't search again.
+ * Finds the comma's HUD bridge on the hotspot and keeps watching it, on its own thread. The comma is optional:
+ * the HUD runs from the car's own buses, and the comma, once found, adds its data and can be managed (the Comma
+ * tab, [CommaManager]). Lives as long as the process, so recreating the activity (day/night switch)
+ * doesn't search again.
  *
  * Searching: a hand-set address, the last device seen, every host in the ARP table and every host a
  * sweep found up but not serving yet (a comma still booting) are asked for /api/status together; then
@@ -41,7 +43,11 @@ class Link private constructor(context: Context) {
     private val neighbors = Neighbors(root)
     private val mapTiles = MapTiles(java.io.File(context.filesDir, "osm/offline"))
     private val mapFeatures = MapFeatures(java.io.File(context.filesDir, "osm/features"))
-    val server = LocalServer(context.assets, assetVersion(context), mapTiles, mapFeatures, MapPrefetch(mapTiles, mapFeatures), onDeviceUnreachable = { checkNow() })
+    /** The Comma tab's SSH management (/app/comma on the [server]). */
+    val comma = CommaManager(context) { this }
+    val server = LocalServer(context.assets, assetVersion(context), mapTiles, mapFeatures, MapPrefetch(mapTiles, mapFeatures),
+        app = { method, path, query, body, token -> comma.handle(method, path, query, body, token) },
+        onDeviceUnreachable = { checkNow() })
 
     // UI thread only
     private var listener: Listener? = null

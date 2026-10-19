@@ -2,8 +2,10 @@
 
 A Tesla-style car view for the Fisker Ocean's own center screen: a web page with a 3D model of the car,
 the lanes, cars, signs and lights its ADAS sees, the road from the map, the car's own state and
-controls, music and navigation. It runs standalone, on the car's screen or in a browser, and shows the
-driving data when a comma device running [sunnypilot](https://github.com/moistpope/sunnypilot) feeds it.
+controls, music and navigation. Its driving data comes from the car's own buses, IBUS1 and IBUS2, which
+Pulse (the add-on board the app runs on) reads. A comma device running
+[sunnypilot](https://github.com/moistpope/sunnypilot) is optional: when it's there it adds the ADAS bus
+itself, the radar and openpilot, and the app manages it over SSH (the *Comma* tab).
 
 ## How it runs
 
@@ -15,7 +17,13 @@ them to the page, so the car, its controls, the live read-out, music and navigat
 else present. On a PC, `python3 serve.py` serves the same page at `http://localhost:18088` with the same
 URL layout (`/`, `/vendor/`, `/models/`, `/dbc/`).
 
-**Fed by the comma bridge.** The driving data comes from sunnypilot's `webhud` process on the comma
+**From the car's own buses.** On Pulse the app reads IBUS1 and IBUS2 and hands every frame to the page,
+whose worker decodes them with the IBUS DBC: the gateway mirrors the ADAS bus onto IBUS2 with the same
+layout, so the status card, lanes, objects, signs, lights, parking sensors, the pose and the map all run
+from the car alone (see *The car's own buses* below). This is the primary source: nothing waits for the
+comma, and nothing on screen says it's missing.
+
+**Joined by the comma (optional).** More data comes from sunnypilot's `webhud` process on the comma
 (`openpilot/sunnypilot/webhud/server.py` there, *Settings → Developer → Web HUD*, port 8088). It is a
 bridge: it reads the ADAS bus, the radar's private bus and openpilot's own services and streams them as
 they are, in ticks at 20 Hz over a WebSocket (`/ws`): raw CAN frames allowlisted by message (the set in
@@ -23,13 +31,19 @@ they are, in ticks at 20 Hz over a WebSocket (`/ws`): raw CAN frames allowlisted
 form. Its REST API (`/api/...`) carries status, replay of recorded routes, the editable CAN overrides and
 a few params, and `/map/...` fetches OSM road tiles. The Android app finds the comma on the head unit's
 hotspot and relays `/api` and `/ws` to it; `serve.py --bridge sunnypilot.local` does the same on a PC.
-Without a bridge the page runs *offline*: the car and its controls stay, the driving data leaves the
-screen until the link is back.
+While the comma streams live, the worker folds its ticks into the car's view (`static/js/world/merge.js`):
+the ADAS module's own messages from the comma's ADAS bus (complete, where Pulse drops a share of the IBUS2
+mirror; the mirror's copy of a message is dropped while the comma gives it), the radar's private bus and
+openpilot's services, all re-clocked onto the page's clock, so the world model fuses the radar and
+openpilot's leads with the car's own data. A *comma* chip shows while it's connected (tap it for the Comma
+tab). The comma's own view is drawn only while it replays a drive, or where there are no car buses (a
+browser on a PC). With neither, the driving data leaves the screen; the car controls, music and navigation
+carry on.
 
 | Path | What |
 |------|------|
-| `static/` | the page: `index.html`, `app.css`, `design.css`, `sw.js`, `js/` (view, car controls, infotainment), `js/world/` (worker: DBC decoding, world model, pose, map) and its Node tests |
-| `android/` | the app for the car's screen (Kotlin, a local server, the CAN helper in Go) |
+| `static/` | the page: `index.html`, `app.css`, `design.css`, `sw.js`, `js/` (view, car controls, infotainment, `comma.js` the Comma tab), `js/world/` (worker: DBC decoding, the comma merge, world model, pose, map) and its Node tests |
+| `android/` | the app for the car's screen (Kotlin, a local server, the CAN helper in Go, the comma's SSH management and its scripts in `app/src/main/assets/comma/`) |
 | `dbc/` | `fisker_ocean_adas_world.dbc` (the ADASBUS subset the page decodes and the bridge streams; `tools/gen_world_dbc.py`), `fisker_ocean_ibus.dbc` (IBUS1/IBUS2 for the car-only view; `tools/gen_ibus.py`), `fisker_ocean_mrr.dbc` (the radar, reverse-engineered; a copy of opendbc's) |
 | `third_party/` | three.js r160 and the Pulse Ocean model (`third_party/README.md`) |
 | `tools/` | the DBC generators, the Blender export of the model, and the Node tools that record and replay the bridge's tick stream |
@@ -137,7 +151,7 @@ camera's cars before the radar feeds openpilot. The radar's messages aren't in t
 say how each scale was checked and which are still open. Tracks are drawn close to raw (each 65 ms
 cycle's position, carried on the radar's own velocity for at most a cycle), so a scale or sign error
 shows up as an offset from the camera's car; like those cars, a car ahead sits with its rear on the
-reported point. A chip at the top right shows the radar's track count, or *no bus 1 data* when the log (or harness)
+reported point. A chip at the top right shows the radar's track count, or *no radar* when the log (or harness)
 has no radar frames.
 
 *Objects* (*Display*): the default *World model* (`static/js/world/world_model.js`) fuses the radar, the ADAS camera list
@@ -212,13 +226,14 @@ the app runs on — the two CAN controllers are wired to the car's IBUS1 and IBU
 the gateway broadcasts there and forwards every frame to the page (see
 [`android/`](android/README.md#the-cars-own-buses)). Two things come of that:
 
-- **The HUD without the comma.** The gateway mirrors the ADAS bus onto IBUS2 for the head unit, with the
-  same layout and signal names, and IBUS1 carries speed, gear, steering, yaw and the body. The page's
-  world-model worker keeps a second decoder fed from these frames, with a DBC generated from the IBUS
-  matrices (`dbc/fisker_ocean_ibus.dbc`, `tools/gen_ibus.py`): the status card,
-  lanes, objects, signs, lights and parking sensors all work from the car alone (no openpilot, no radar).
-  Whenever the comma's ticks aren't coming, this view takes over (*CAR* in the mode chip); with nothing
-  at all, the driving data comes off the screen and the car controls, music and navigation carry on.
+- **The HUD.** The gateway mirrors the ADAS bus onto IBUS2 for the head unit, with the same layout and
+  signal names, and IBUS1 carries speed, gear, steering, yaw and the body. The page's world-model worker
+  decodes these frames with a DBC generated from the IBUS matrices (`dbc/fisker_ocean_ibus.dbc`,
+  `tools/gen_ibus.py`): the status card, lanes, objects, signs, lights and parking sensors all work from
+  the car alone. The comma, when connected, joins this view with openpilot and the radar (above); with no
+  frames at all, the driving data comes off the screen and the car controls, music and navigation carry
+  on. The *Signals* tab browses IBUS1 and IBUS2 live, every message the app reads (and the comma's ADAS
+  bus while it's connected).
 - **Live car controls.** The car-control menus show a "From the car" block at the top of each menu and
   their controls follow what the car reports (`carcatalog.js` `live`, from the generated table of status
   signals): locks, doors, the liftgate, windows, sunroof, mirrors, lights, climate, seat heat, gear, drive
@@ -248,15 +263,14 @@ drops the blur behind the HUD's cards, then lowers the 3D view's resolution in s
 them back a step at a time once frames have kept up for 8 s (a step that slows things straight down
 again waits a minute). *Full*, *75%* and *50%* fix it, for comparing on the car.
 
-Where the work is done: the comma's process is a *bridge*. It reads the buses and openpilot's
-services and streams them to the page as they are -- the ADASBUS and radar frames the HUD decodes
+Where the work is done: the car's buses are decoded in the page (above), and the comma's process is a
+*bridge*. It reads its buses and openpilot's services and streams them to the page as they are -- the ADASBUS and radar frames the HUD decodes
 (raw, allowlisted by message), and openpilot's services in compact form (`extract.py`) -- in ticks at
 20 Hz over the WebSocket. The page decodes them and runs the world model itself, in a worker off its
 main thread (`static/js/world/`: `dbc.js`, `fisker_world.js`, `fisker_radar.js`, `world_model.js`,
-`state.js`, `worker.js`), and hands the view the same state snapshots the comma used to build. So
-the car's own screen carries the HUD, the comma stays light, and the Android app runs the whole
-page from its own package: without the comma it still shows the car, the car controls, the music
-and the navigation, with the driving data off the screen until the link is back (*offline*). The
+`state.js`, `merge.js`, `worker.js`), and hands the view the same state snapshots the comma used to
+build. So the car's own screen carries the HUD, the comma stays light, and the Android app runs the
+whole page from its own package, from the car's buses, with or without the comma. The
 DBCs come down as files (`/dbc/`). `tools/record_ticks.mjs` saves a running server's tick stream and
 `tools/replay_ticks.mjs` runs the same pipeline in Node over it, for working on the decoding and fusion
 without a browser; the tests are in `static/js/world/tests/` (`node --test static/js/world/tests/*.test.js`).
@@ -369,11 +383,39 @@ once. It needs a secure context, such as `localhost`; a plain `http://sunnypilot
 HTTP cache instead. The Android app serves everything from its own APK and doesn't use it. The
 day/night theme is applied from the saved setting before the first paint.
 
-**Open:** on the car's own screen, the Android app in [`android/`](android/README.md): it finds the
-comma on the hotspot (where `.local` names don't resolve), runs the HUD full screen and rides out
-dropouts. In a browser, `python3 serve.py --bridge sunnypilot.local` (or the device's IP) and open
-`http://localhost:18088`. Either way the bridge must be on: *Settings → Developer → Web HUD*
-(`EnableWebHud`, on by default), port 8088 on the comma.
+**Open:** on the car's own screen, the Android app in [`android/`](android/README.md): it runs the HUD
+full screen from the car's buses, and finds the comma on the hotspot when there is one (where `.local`
+names don't resolve). In a browser, `python3 serve.py --bridge sunnypilot.local` (or the device's IP) and
+open `http://localhost:18088`; there the comma is the only source. For the comma's part the bridge must
+be on: *Settings → Developer → Web HUD* (`EnableWebHud`, on by default), port 8088 on the comma.
+
+## Managing the comma
+
+The *Comma* tab (`static/js/comma.js`, `android/` `CommaManager`), on the car's screen. The app makes an
+SSH key pair of its own, ECDSA P-256 in the head unit's Android Keystore (the private half never leaves it;
+it signs there), and *Authorize on the comma* sends the public half to the bridge (`POST /api/ssh/authorize`),
+which adds it to openpilot's `GithubSshKeys` beside any keys already there and turns SSH on. From then on the
+app logs in as `comma` (the comma's host key is pinned on first use) and runs everything over SSH:
+
+- **Overview:** the connection, the key, SSH, a summary of the device; start, stop and restart openpilot
+  (its manager is stopped with SIGTERM so it takes its processes down, then the `comma` tmux session;
+  started through AGNOS's `comma.service`, else the launch script in a new `comma` session), reboot.
+- **Log:** openpilot's tmux session as it scrolls (`tmux capture-pane`), 200 to 3000 lines.
+- **Processes:** `managerState`'s processes with CPU and memory from `/proc`, and `deviceState`.
+- **Routes:** the drives in `/data/media/0/realdata`, with their files and sizes; *Play* replays one in the HUD.
+- **Updates:** the install (repository, branch, commit, ahead/behind), openpilot's updater (check and
+  download: `SIGUSR1` and `SIGHUP` to `updated`), git fetch and pull, switching branches (any branch of the
+  repository; the updater follows it too), installing a fork (any `https://` or `git@` repository and branch:
+  cloned beside the install, swapped in, the old one kept as `/data/openpilot.bak` and restorable, then a
+  reboot into it), and the panda's firmware: build, build and flash, recover from DFU.
+- **Debug:** a command on the comma, recent jobs, and everything the app read.
+
+Long actions are jobs on the app: their output streams into the tab and they carry on if it's closed. Anything
+that disturbs openpilot asks first and is refused while the car moves (by the bridge's word or the car's speed).
+The scripts are in `android/app/src/main/assets/comma/` (`prelude.sh`, `actions.sh`, `info.py`, `routes.py`).
+The page reaches them at `/app/comma/...` on the app's own server, with a per-launch token from the app, so
+other apps on the head unit can't. Adding keys needs a bridge from sunnypilot with `/api/ssh` (else add the
+public key shown in the tab to `GithubSshKeys` by hand).
 
 ## Car controls
 
@@ -493,6 +535,7 @@ Verify them on a drive with good lane confidence against the openpilot lanes (*L
 ## API
 
 `GET /api/status`, `GET /api/routes`, `POST /api/replay {action: load|play|pause|toggle|seek|step|speed|live|demo, ...}`,
+`GET /api/ssh`, `POST|DELETE /api/ssh/authorize {publicKey}` (the app's SSH key into or out of `GithubSshKeys`),
 `GET /map/tile/<lat>/<lon>/<name>` (an OSM road tile, fetched into mapd's folder on first use),
 `PUT /api/upload?name=<file>` (raw rlog/qlog body), `GET|PUT /api/params` (personality, experimental
 mode, units), `GET|PUT|DELETE /api/overrides`. Static (the app and `serve.py`; the bridge serves `/dbc/` only, and the
@@ -503,8 +546,8 @@ snapshot of the latest frame of every message, with `reset`); the client sends `
 A viewer that falls behind gets its missed ticks merged into one, never dropped. The world model's
 sensor calibration is a page setting now (*Display → Debug*).
 
-Writes are accepted from private addresses only, never cross-origin, and CAN override changes and
-replay are refused while the car is moving (replay also stops itself if the car starts moving).
+Writes are accepted from private addresses only, never cross-origin, and CAN override changes, SSH keys
+and replay are refused while the car is moving (replay also stops itself if the car starts moving).
 
 ## Development
 

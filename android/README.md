@@ -1,17 +1,17 @@
 # Oceanfront View on the car's screen
 
 An Android app that shows the [HUD page](../README.md) full screen on the car's own screen (Pulse,
-the add-on board). Pulse runs the Wi-Fi hotspot the comma joins. The page and everything it needs
-(its scripts, three.js, the car model, the DBCs) ship inside the APK and are served by the app
-itself, so the HUD is up the moment the app starts and runs with or without the comma: the decoding
-of the ADAS bus and the world model happen in the page. The app finds the comma on the hotspot by
-itself (a browser there can't resolve `sunnypilot.local`), relays its API and its 20 Hz stream to
-the page, keeps the HUD up through dropouts, and needs no changes on the comma beyond *Web HUD*
-being on (*Settings → Developer*). Without the comma the page shows the car, the car controls (with
-the live read-out from IBUS1/IBUS2), the music and the navigation, and keeps the driving data off
-the screen (*offline*); the CAN settings, driving settings, playback and signal browser say they need
-the comma. A foreground service (`HudService`) keeps the process -- the CAN reader, the link and the
-local server -- alive while the HUD isn't on screen.
+the add-on board). The page and everything it needs (its scripts, three.js, the car model, the DBCs)
+ship inside the APK and are served by the app itself, so the HUD is up the moment the app starts. Its
+driving data comes from the car's own buses: the app reads IBUS1 and IBUS2 and the page decodes them
+(the gateway mirrors the ADAS bus onto IBUS2). The comma is optional. Pulse runs the Wi-Fi hotspot it
+joins; the app finds it there by itself (a browser there can't resolve `sunnypilot.local`) and relays
+its API and its 20 Hz stream to the page, which merges its ADAS bus, radar and openpilot into the car's
+view, and the app manages it over SSH (*Managing the comma* below). Nothing on screen waits for it or
+says it's missing: no connecting card, no reconnecting pill, just a *comma* chip while it's there. The
+CAN settings, driving settings and playback say they need it. A foreground service (`HudService`)
+keeps the process -- the CAN reader, the link and the local server -- alive while the HUD isn't on
+screen.
 
 ## How it finds the comma
 
@@ -50,8 +50,8 @@ relayed to the comma byte for byte (HTTP and the WebSocket alike). So:
 - with the screen off or another app in front the app lets go of the comma, so `webhud` stops reading
   the bus, and reconnects when the HUD is shown again (the CAN reader and the server carry on).
 
-A *Reconnecting…* pill shows at the top while the page is up but the comma isn't. The page's own
-chip says *offline*. Back opens a menu: reload, search again, set the address, close.
+None of this shows: the page's *comma* chip is there while the comma is and goes when it goes. Back
+opens a menu: reload, look for the comma again, set its address, close.
 
 The screen stays on and the system bars are hidden. Rotation keeps the page. The page's *auto* theme
 follows the car's day/night mode.
@@ -67,7 +67,7 @@ registered in the app, and one left by an earlier version is unregistered.
 
 The page also tells the app its theme setting (`window.WebHudApp.setTheme`). With *Day* or *Night*
 picked in the HUD, the app starts in that mode next time: its window, the WebView behind the page
-and the connecting card. So it no longer flashes the car's mode before the page loads. *Auto* keeps
+and the starting card. So it no longer flashes the car's mode before the page loads. *Auto* keeps
 following the car. The page sets its own theme before its first paint.
 
 ## Music and navigation
@@ -153,6 +153,27 @@ controllers share one SPI bus and every interrupt lands on CPU 0. Status message
 read-out still settles; it just lags. Reducing the loss (RT priority on the `mcp251x`/SPI IRQ threads,
 or the SoC's own CAN controller) would help this and Pulse's own app.
 
+## Managing the comma
+
+The page's *Comma* tab talks to `CommaManager` at `/app/comma/...` on the local server, with a token it
+gets from `window.WebHudApp.appToken()` (the server is on loopback, which other apps can reach too).
+
+- **The key** (`SshKey`): ECDSA P-256, made in the Android Keystore under `comma-ssh`; JSch signs with it
+  there through a custom `Identity` (`SshWire` has the SSH encodings). *Authorize* posts its OpenSSH line to
+  the bridge's `/api/ssh/authorize`, which adds it to `GithubSshKeys` and sets `SshEnabled`; deleting the key
+  takes it off the comma first.
+- **SSH** (`CommaSsh`, [JSch](https://github.com/mwiede/jsch)): one session as `comma@<the comma>:22`, kept
+  open and shared, a command per exec channel. The host key is pinned on first use; another one is refused
+  (*Trust the new host key* in the tab after a reflash).
+- **Scripts** (`app/src/main/assets/comma/`): `prelude.sh` (paths, the venv's python, how openpilot stops and
+  starts), then `actions.sh` (the jobs), `info.py` (processes, device, install, updater) or `routes.py`.
+  Each runs as `bash -c` so nothing in it reads the rest from stdin. Jobs run on the app and keep their last
+  512 kB of output; the page follows them by offset. Start, stop, restart, reboot, pull, branch, install,
+  restore, the panda and commands are refused while the car moves (the bridge's `/api/status`, or the speed
+  the page sends).
+
+`adb logcat -s WebHud` logs each job's title (`comma job N: ...`).
+
 ## Build and install
 
 Needs JDK 17+ and the Android SDK (`ANDROID_HOME`, or `sdk.dir` in `local.properties`).
@@ -160,7 +181,7 @@ Needs JDK 17+ and the Android SDK (`ANDROID_HOME`, or `sdk.dir` in `local.proper
 ```
 cd android
 ./gradlew assembleRelease        # app/build/outputs/apk/release/app-release.apk, ~28 MB (the page and the car model are in it)
-./gradlew testDebugUnitTest      # JVM tests: subnet math, ARP parsing, status probe, sweep, relay
+./gradlew testDebugUnitTest      # JVM tests: subnet math, ARP parsing, status probe, sweep, relay, app API, SSH encodings
 adb install -r app/build/outputs/apk/release/app-release.apk
 ```
 
