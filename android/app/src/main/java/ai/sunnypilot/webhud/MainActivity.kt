@@ -121,7 +121,7 @@ class MainActivity : Activity(), Link.Listener, Infotainment.Listener, CanBridge
             ui.post { setLocationWanted(on) }
         }
 
-        /** The secret the page sends with its requests to the app's own API (/app/comma, CommaManager). */
+        /** The secret the page sends with its requests to the app's own API (/app/comma, CommaManager; /app/update, AppUpdater). */
         @JavascriptInterface
         fun appToken(): String = link.comma.token
 

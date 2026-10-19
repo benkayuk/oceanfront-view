@@ -18,8 +18,8 @@
 //
 // A section: { kind, title, note, controls }. kind 'rows' (the default) lists the controls; 'tiles' lays
 // toggles and actions out as cells; 'climate' is the Tesla climate bar (carcontrols.js climate());
-// 'status' is Energy's one line; 'hidden' holds controls the 3D car and the chips need (live readers,
-// defaults) that the sheet doesn't show. A control may carry an icon (util.js ICONS) for a tile or a bar.
+// 'status' is Energy's one line; 'app' is this app's version and its updates (appupdate.js); 'hidden' holds
+// controls the 3D car and the chips need (live readers, defaults) that the sheet doesn't show. A control may carry an icon (util.js ICONS) for a tile or a bar.
 //
 // A control: { id, type, label, sub, def, live, tx, off, icon, ... } with type
 //   toggle, seg (options), slider (min max step unit), select (options), levels (max, kind), swatches, modes,
@@ -529,7 +529,10 @@ export const CATEGORIES = [
   {
     id: 'software', label: 'Software', icon: 'download', system: true,
     sections: [
+      // this app: its version and its updates from the repository's releases (appupdate.js)
+      { kind: 'app', title: 'Oceanfront View' },
       {
+        title: 'FiskerOS',
         controls: [
           { type: 'info', items: [['Version', 'FiskerOS 2.4.0'], ['Installed', 'Sep 18'], ['Update', '2.4.1 · 1.2 GB']] },
           B('Release notes', 'The release notes would open here (mockup)'),
@@ -541,7 +544,7 @@ export const CATEGORIES = [
         controls: [
           { type: 'note', text: "The car can't be driven for about 25 minutes while it installs." },
           B('Schedule', 'The update would be scheduled for 2:00 AM (mockup)'),
-          B('Install now', 'The update would start now (mockup)', 'primary'),
+          B('Install now', 'The update would start now (mockup)'),
         ],
       },
       {

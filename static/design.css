@@ -370,6 +370,11 @@ html.fo { font-size: 16px; }
 .fo-status-line.ok { color: var(--fo-ok); }
 .fo-row.tap { cursor: pointer; }
 .fo-row__sub.ok { color: var(--fo-ok); }
+.fo-note.bad { color: var(--fo-bad); }
+.fo-btn:disabled { opacity: .45; }
+.fo-appupdate > * + * { margin-top: .75rem; }
+.fo-progress { height: .375rem; border-radius: .1875rem; background: var(--fo-cell-2); overflow: hidden; }
+.fo-progress i { display: block; height: 100%; background: var(--fo-accent); transition: width var(--fo-t-state) linear; }
 .fo-seatpic svg { width: 9rem; height: 6.5rem; display: block; overflow: visible; }
 .fo-seatpic .seat rect { fill: none; stroke: var(--fo-ink); stroke-width: 1.75; }
 .fo-seatpic .rail { fill: var(--fo-line); }

@@ -181,7 +181,7 @@ Needs JDK 17+ and the Android SDK (`ANDROID_HOME`, or `sdk.dir` in `local.proper
 ```
 cd android
 ./gradlew assembleRelease        # app/build/outputs/apk/release/app-release.apk, ~28 MB (the page and the car model are in it)
-./gradlew testDebugUnitTest      # JVM tests: subnet math, ARP parsing, status probe, sweep, relay, app API, SSH encodings
+./gradlew testDebugUnitTest      # JVM tests: subnet math, ARP parsing, status probe, sweep, relay, app API, SSH encodings, updates
 adb install -r app/build/outputs/apk/release/app-release.apk
 ```
 
@@ -195,6 +195,26 @@ On Android Automotive, an app that isn't *distraction optimized* is blocked whil
 activity declares `distractionOptimized`, but on user builds the car service only honors that for
 system apps or apps from an allowlisted store. If the HUD is blocked when the car moves, install it
 as a system app on the rooted head unit (e.g. under `/system/priv-app`).
+
+## Updating itself
+
+The car menu's *Software* sheet shows the app's version and checks the repository's latest GitHub
+release (`AppUpdater`, at `/app/update`; drafts and pre-releases aren't offered) when it opens, at
+most every 30 minutes, or on *Check for updates*. A release is an update when its tag (`v1.2`) is a
+higher version than the installed `versionName`, and it has an `.apk` attached. *Install* downloads
+it and checks it before installing: its size and the SHA-256 GitHub keeps for the asset, its package,
+that it isn't an older `versionCode`, and that it is signed with the same key as the installed app.
+With root, `pm install` replaces the app silently and starts it again; without, Android's installer
+asks on screen (the first time, to allow this app to install apps). The HUD restarts either way, so
+installing is refused while the car moves.
+
+For a release to work as an update:
+
+- bump `versionName` (to match the tag) and `versionCode` in `app/build.gradle.kts`, or the app keeps
+  offering the same release after installing it;
+- build it with the same debug key as the APKs already on cars (the `~/.android/debug.keystore` of
+  the machine that built them): Android won't install an APK signed by another key over the app, and
+  the app says so instead of trying.
 
 ## Debugging
 

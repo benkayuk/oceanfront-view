@@ -45,8 +45,12 @@ class Link private constructor(context: Context) {
     private val mapFeatures = MapFeatures(java.io.File(context.filesDir, "osm/features"))
     /** The Comma tab's SSH management (/app/comma on the [server]). */
     val comma = CommaManager(context) { this }
+    /** The app updating itself from the repository's releases (/app/update, the Software sheet). */
+    private val updater = AppUpdater(context, root) { comma.token }
     val server = LocalServer(context.assets, assetVersion(context), mapTiles, mapFeatures, MapPrefetch(mapTiles, mapFeatures),
-        app = { method, path, query, body, token -> comma.handle(method, path, query, body, token) },
+        app = { method, path, query, body, token ->
+            if (path.startsWith("/app/update")) updater.handle(method, path, body, token) else comma.handle(method, path, query, body, token)
+        },
         onDeviceUnreachable = { checkNow() })
 
     // UI thread only

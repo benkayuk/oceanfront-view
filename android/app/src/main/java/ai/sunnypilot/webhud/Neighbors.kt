@@ -64,6 +64,13 @@ class RootShell {
     @Volatile private var shell: Shell? = null
     @Volatile private var retryAt = 0L
 
+    /** Whether there's root: null until su has answered. */
+    val available: Boolean? get() = when (state) {
+        State.READY -> true
+        State.UNAVAILABLE -> false
+        else -> null
+    }
+
     fun runIfReady(cmd: String, timeoutMs: Long = 2000): String? = when (state) {
         State.IDLE -> {
             if (nowMs() >= retryAt) start()
@@ -84,12 +91,12 @@ class RootShell {
 
     /**
      * Runs [cmd] once root is up, waiting up to [waitMs] for su to start (and for the grant prompt to be
-     * answered); its output, or null without root. Blocks: not on the main thread.
+     * answered) and up to [timeoutMs] for [cmd] itself; its output, or null without root. Blocks: not on the main thread.
      */
-    fun run(cmd: String, waitMs: Long = GRANT_TIMEOUT_MS + 5000): String? {
+    fun run(cmd: String, waitMs: Long = GRANT_TIMEOUT_MS + 5000, timeoutMs: Long = 2000): String? {
         val deadline = nowMs() + waitMs
         while (nowMs() < deadline) {
-            runIfReady(cmd)?.let { return it }
+            runIfReady(cmd, timeoutMs)?.let { return it }
             if (state == State.UNAVAILABLE) return null
             Thread.sleep(250)
         }

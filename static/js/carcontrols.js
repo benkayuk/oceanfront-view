@@ -15,6 +15,7 @@ import { $, $$, el, iconSvg, setClass, setText } from './util.js';
 import { CATEGORIES, DRIVE_MODES, SEAT_LIMITS, SEAT_MEMORY, MSG, defaults, liveControls, liveExtras } from './carcatalog.js';
 import { ZONES, ANCHORS } from './cutaway.js';
 import { ApaMock, APA_SIGNALS } from './apamock.js';
+import { AppUpdate } from './appupdate.js';
 
 const OVERVIEW = { at: [0, 0.6, 2.4], az: 180, el: 90, fit: [2.3, 5.1] };   // top down, nose up...
 const OVERVIEW_WIDE = { at: [0, 0.6, 2.4], az: 90, el: 90, fit: [5.1, 2.3] };   // ...or right, on a short screen
@@ -64,6 +65,7 @@ export class CarControls {
     this.flash = null;   // lamps shown for a moment (lighting preview), { until, lamps }
     this.memory = Object.fromEntries(Object.entries(SEAT_MEMORY).map(([k, p]) => [k, { ...p }]));   // the driver's saved positions
     this.apa = null;     // the mock automated parking, while it runs (apamock.js)
+    this.appUpdate = new AppUpdate(app);   // Software: the app's version and its updates (appupdate.js)
     this._p = new THREE.Vector3();
     this._c = new THREE.Vector3();
     this.buildRibbon();
@@ -274,6 +276,7 @@ export class CarControls {
     else if (sec.note) s.append(el('p.fo-note', sec.note));
     if (sec.kind === 'climate') { s.append(...this.climate(sec.controls)); return s; }
     if (sec.kind === 'status') { s.append(this.energyStatus()); return s; }
+    if (sec.kind === 'app') { s.append(this.appUpdate.render()); return s; }
     if (sec.kind === 'tiles') {
       const g = el('div.fo-tiles');
       for (const ctl of sec.controls) { const n = this.control(ctl, 'tile'); if (n) g.append(n); }
