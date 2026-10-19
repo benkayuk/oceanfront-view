@@ -37,8 +37,9 @@ import org.json.JSONObject
 
 /**
  * The HUD, full screen. The page comes from the app's own [LocalServer] (its files are in the APK) and
- * runs on its own, with or without the comma: this activity loads it, nudges its WebSocket when the
- * device comes back, reloads it if it failed to load, and replaces the WebView if its renderer dies.
+ * runs from the car's own buses, with or without the comma: this activity loads it, nudges its WebSocket
+ * when the comma is found, reloads it if it failed to load, and replaces the WebView if its renderer dies.
+ * Nothing on screen waits for the comma or says it's missing.
  * It also hands the page what the head unit is playing and its next turn ([Infotainment]) and the
  * car's CAN state ([CanBridge]). Back opens a small menu. [HudService] keeps the process alive.
  */
@@ -49,9 +50,6 @@ class MainActivity : Activity(), Link.Listener, Infotainment.Listener, CanBridge
     private lateinit var link: Link
     private lateinit var holder: FrameLayout
     private lateinit var card: View
-    private lateinit var cardTitle: TextView
-    private lateinit var cardDetail: TextView
-    private lateinit var pill: View
     private var web: WebView? = null
 
     private val ui = Handler(Looper.getMainLooper())
@@ -60,19 +58,14 @@ class MainActivity : Activity(), Link.Listener, Infotainment.Listener, CanBridge
     private var staleAssets = false   // a file of the page failed to load: reload it once connected
     private var loadedAt = 0L         // when the page was last (re)loaded, on the elapsedRealtime clock
     private var reloads = 0           // reloads in a row, for backoff
-    private var pillPending = false
     private var fileCallback: ValueCallback<Array<Uri>>? = null
     private var forcedNight: Boolean? = null   // started in the page's own day/night instead of the car's
 
-    private val showPill = Runnable {
-        pillPending = false
-        if (connected == null && page == Page.LOADED) pill.visibility = View.VISIBLE
-    }
     private val retryLoad = Runnable { load() }
 
     /**
      * Start in the page's last theme setting when it's Day or Night rather than Auto, so the window,
-     * the WebView behind the page and the connecting card don't show the car's day/night colors and
+     * the WebView behind the page and the starting card don't show the car's day/night colors and
      * then flip once the page has loaded. Auto follows the car (the page reads prefers-color-scheme,
      * which follows this configuration), so it's left alone. The page reports its setting through
      * [PageBridge].
@@ -118,6 +111,10 @@ class MainActivity : Activity(), Link.Listener, Infotainment.Listener, CanBridge
         @JavascriptInterface
         fun canState(): String = CanBridge.snapshot()
 
+        /** The secret the page sends with its requests to the app's own API (/app/comma, CommaManager). */
+        @JavascriptInterface
+        fun appToken(): String = link.comma.token
+
         /**
          * Send a frame to the car: {bus, addr, data (hex), repeat?, gapMs?}. Only the head unit's control
          * messages on the allowlist go out (CanIds.TX, checked here and in the helper). Returns null when
@@ -138,12 +135,6 @@ class MainActivity : Activity(), Link.Listener, Infotainment.Listener, CanBridge
         setContentView(R.layout.activity_main)
         holder = findViewById(R.id.web_holder)
         card = findViewById(R.id.card)
-        cardTitle = findViewById(R.id.card_title)
-        cardDetail = findViewById(R.id.card_detail)
-        pill = findViewById(R.id.pill)
-        findViewById<View>(R.id.btn_address).setOnClickListener { showAddressDialog() }
-        findViewById<View>(R.id.btn_search).setOnClickListener { link.searchAgain() }
-        pill.setOnClickListener { showMenu() }
 
         if (Build.VERSION.SDK_INT >= 28) {
             window.attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
@@ -202,26 +193,12 @@ class MainActivity : Activity(), Link.Listener, Infotainment.Listener, CanBridge
 
     override fun onConnected(device: Device) {
         connected = device
-        ui.removeCallbacks(showPill)
-        pillPending = false
-        pill.visibility = View.GONE
-        when (page) {
-            Page.NONE, Page.FAILED -> load()
-            Page.LOADED -> reconnectPage()
-            Page.LOADING -> {}
-        }
-        updateCard()
+        if (page == Page.LOADED) reconnectPage()
     }
 
+    // the comma is optional: its absence changes nothing on screen (the page drops its comma chip by itself)
     override fun onSearching(detail: String) {
         connected = null
-        cardDetail.text = detail
-        // short blips don't flash anything; the page shows its own "offline" chip meanwhile
-        if (page == Page.LOADED && pill.visibility != View.VISIBLE && !pillPending) {
-            pillPending = true
-            ui.postDelayed(showPill, PILL_DELAY_MS)
-        }
-        updateCard()
     }
 
     // ---- Infotainment.Listener ----------------------------------------------------------------------
@@ -266,15 +243,9 @@ class MainActivity : Activity(), Link.Listener, Infotainment.Listener, CanBridge
         ui.postDelayed(retryLoad, minOf(MAX_RELOAD_DELAY_MS, 1000L shl minOf(reloads++, 5)))
     }
 
+    /** Until the page is up: a spinner. The page is the app's own, so this is a moment at start. */
     private fun updateCard() {
-        val d = connected
         card.visibility = if (page == Page.LOADED) View.GONE else View.VISIBLE
-        cardTitle.text = when {
-            page == Page.LOADING -> getString(R.string.starting)
-            d != null -> getString(R.string.connecting_to, d.hostname)
-            else -> getString(R.string.looking)
-        }
-        if (d != null) cardDetail.text = d.address
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -353,13 +324,12 @@ class MainActivity : Activity(), Link.Listener, Infotainment.Listener, CanBridge
          *  page does). Not API calls, which the page retries, nor anything fetched once it's running. */
         private fun isPageAsset(request: WebResourceRequest): Boolean {
             val path = request.url.path.orEmpty()
-            return request.url.host == LOOPBACK && !path.startsWith("/api/") && path != "/favicon.ico" &&
+            return request.url.host == LOOPBACK && !path.startsWith("/api/") && !path.startsWith("/app/") && path != "/favicon.ico" &&
                 SystemClock.elapsedRealtime() - loadedAt < ASSET_LOAD_WINDOW_MS
         }
 
         private fun failed() {
             page = Page.FAILED
-            link.checkNow()
             scheduleReload()
             updateCard()
         }
@@ -396,7 +366,7 @@ class MainActivity : Activity(), Link.Listener, Infotainment.Listener, CanBridge
 
     private fun showMenu() {
         val d = connected
-        val title = if (d != null) getString(R.string.menu_connected, d.hostname, d.address) else getString(R.string.looking)
+        val title = if (d != null) getString(R.string.menu_connected, d.hostname, d.address) else getString(R.string.menu_no_comma)
         val items = arrayOf(
             getString(R.string.menu_reload),
             getString(R.string.menu_search),
@@ -469,7 +439,6 @@ class MainActivity : Activity(), Link.Listener, Infotainment.Listener, CanBridge
     private companion object {
         const val TAG = "WebHud"
         const val LOOPBACK = "127.0.0.1"
-        const val PILL_DELAY_MS = 1500L
         const val MAX_RELOAD_DELAY_MS = 30_000L
         const val ASSET_LOAD_WINDOW_MS = 30_000L
         const val REQUEST_FILE = 1

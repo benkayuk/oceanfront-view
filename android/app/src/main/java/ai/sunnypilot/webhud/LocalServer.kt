@@ -36,6 +36,8 @@ class LocalServer(
     private val mapTiles: MapTiles? = null,
     private val mapFeatures: MapFeatures? = null,
     private val mapPrefetch: MapPrefetch? = null,
+    /** The app's own API under /app/ (the Comma tab, [CommaManager]): (method, path, query, body, X-App-Token) -> (status, JSON). */
+    private val app: ((String, String, Map<String, String>, String?, String?) -> Pair<Int, String>)? = null,
     private val onDeviceUnreachable: () -> Unit,
 ) {
     private val server = bind()
@@ -123,6 +125,7 @@ class LocalServer(
                     path.startsWith("/map/tile/") -> serveTile(client, method, path, text)
                     path.startsWith("/map/features/") -> serveFeatures(client, method, path, text)
                     path == "/map/prefetch" || path == "/map/status" -> servePrefetch(client, method, path, text)
+                    path.startsWith("/app/") -> serveApp(client, method, path, target.substringAfter('?', ""), text)
                     else -> serveAsset(client, method, path, text)
                 }
             } catch (e: IOException) {
@@ -336,6 +339,37 @@ class LocalServer(
         }
         respond(out, 200, "OK", "application/json", status.toString().toByteArray(), mapOf("Cache-Control" to "no-store"), method == "HEAD")
         out.flush()
+    }
+
+    /** The app's own API: JSON in and out, one request per connection (an SSH job may take a while to answer). */
+    private fun serveApp(client: Socket, method: String, path: String, query: String, head: String) {
+        val out = client.getOutputStream()
+        val api = app
+        if (api == null) {
+            respond(out, 404, "Not Found", "application/json", "{\"error\":\"no app API\"}".toByteArray(), emptyMap(), false)
+            return
+        }
+        val length = header(head, "Content-Length")?.toIntOrNull() ?: 0
+        if (length > MAX_BODY) {
+            respond(out, 413, "Payload Too Large", "application/json", "{\"error\":\"too large\"}".toByteArray(), emptyMap(), false)
+            return
+        }
+        val body = if (length > 0) {
+            val buf = ByteArray(length)
+            val input = client.getInputStream()
+            var got = 0
+            while (got < length) {
+                val n = input.read(buf, got, length - got)
+                if (n < 0) throw IOException("body ended early")
+                got += n
+            }
+            String(buf, Charsets.UTF_8)
+        } else null
+        val params = query.split('&').filter { it.isNotEmpty() }.associate {
+            URLDecoder.decode(it.substringBefore('='), "UTF-8") to URLDecoder.decode(it.substringAfter('=', ""), "UTF-8")
+        }
+        val (status, json) = api(method, path, params, body, header(head, "X-App-Token"))
+        respond(out, status, if (status == 200) "OK" else "Error", "application/json; charset=utf-8", json.toByteArray(), mapOf("Cache-Control" to "no-store"), method == "HEAD")
     }
 
     private fun exists(rel: String): Boolean = try {

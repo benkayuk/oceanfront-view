@@ -51,7 +51,7 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             // sideloaded onto the car's own screen, never published: the debug key keeps installs simple
             signingConfig = signingConfigs.getByName("debug")
         }
@@ -85,6 +85,7 @@ androidComponents {
 }
 
 dependencies {
+    implementation("com.github.mwiede:jsch:2.28.8")   // SSH to the comma (CommaSsh): pure Java, BSD
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20260814")   // the real org.json; android.jar only has stubs
 }

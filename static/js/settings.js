@@ -1,22 +1,29 @@
-// Settings sheet: CAN overrides (opendbc/car/fisker/values.py), driving params, display, playback,
-// a live CAN signal browser and connection info.
+// Settings sheet: display, a live CAN signal browser (the car's IBUS1/IBUS2, and the comma's ADAS bus), the
+// comma's management (comma.js) and, with the comma connected, its CAN overrides (opendbc/car/fisker/values.py),
+// driving params, playback and connection info.
 import { $, $$, el, api, fmtBytes, fmtTime, prettyLabel, prettySignal, iconSvg } from './util.js';
 import { OCEAN_PAINTS, OCEAN_WHEELS, oceanPaint } from './models.js';
+import { RX_IDS } from './ibus_tables.js';
+import { CommaPanel } from './comma.js';
 
 // tab -> what it needs the comma for
 const OFFLINE_TABS = new Map([
   ['overrides', 'The CAN settings are kept on it and applied by it; they stay as they were.'],
   ['driving', 'The driving settings are openpilot\'s, on the comma.'],
   ['playback', 'The recorded drives are on the comma.'],
-  ['signals', 'The ADAS bus comes down the comma\'s link.'],
 ]);
+
+// the signal browser's buses: the car's own two (what the app reads, CanIds.RX), and the comma's ADAS bus
+const SIG_SOURCES = [['IBUS1', 'IBUS1'], ['IBUS2', 'IBUS2'], ['ADAS', 'ADAS bus (comma)']];
 
 export class Settings {
   constructor(app) {
     this.app = app;
     this.sheet = $('#settings');
     this.body = $('#tab-body');
-    this.tab = 'overrides';
+    this.tab = 'display';
+    this.sigBus = 'IBUS1';
+    this.comma = new CommaPanel(app);
     this.displaySection = 'general';
     $('#btn-settings').innerHTML = iconSvg('gear');
     $('#settings-close').innerHTML = iconSvg('close');
@@ -41,14 +48,14 @@ export class Settings {
   close() {
     this.sheet.classList.add('hidden');
     this.sheet.setAttribute('aria-hidden', 'true');
-    this.app.subscribeRaw([]);
+    this.app.subscribeRaw('ibus', []);
+    this.comma.leave();
   }
 
-  /** Without the comma these tabs have nothing to show or change: the overrides and params live there,
-   *  so do the logs, and the signals come down its link. */
+  /** Without the comma these tabs have nothing to show or change: the overrides, params and drives live there. */
   needsComma(tab) {
-    if (!this.app.offline || !OFFLINE_TABS.has(tab)) return false;
-    this.body.append(el('div.banner.bad', 'Not connected to the comma. ' + OFFLINE_TABS.get(tab)));
+    if (this.app.commaConnected || !OFFLINE_TABS.has(tab)) return false;
+    this.body.append(el('div.banner', 'The comma isn\'t connected (it\'s optional: the HUD runs from the car). ' + OFFLINE_TABS.get(tab)));
     return true;
   }
 
@@ -58,10 +65,12 @@ export class Settings {
     keep = keep && tab === this.tab;
     this.tab = tab;
     $$('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
-    if (tab !== 'signals') this.app.subscribeRaw([]);
+    if (tab !== 'signals') this.app.subscribeRaw('ibus', []);
+    if (tab !== 'comma') this.comma.leave();
     const render = {
       overrides: () => this.renderOverrides(), driving: () => this.renderDriving(), display: () => this.renderDisplay(),
       playback: () => this.renderPlayback(), signals: () => this.renderSignals(), about: () => this.renderAbout(),
+      comma: () => this.comma.render(this.body, keep),
     }[tab];
     const live = this.body;
     if (!keep) {
@@ -442,67 +451,94 @@ export class Settings {
 
   // ---- signal browser ---------------------------------------------------------------------------------
 
-  async renderSignals() {
+  // The car's buses as the app reads them (the IBUS DBC, decoded in the worker; the messages the app lets through),
+  // or the comma's ADAS bus (the ADASBUS DBC) while it's connected. An IBUS2 message the comma's ADAS bus is giving
+  // says so: the worker takes it from the comma then, complete, rather than from the gateway's mirror.
+  renderSignals() {
     const body = this.body;
-    this.dbc = this.app.dbc;   // the worker hands it over once it has loaded the DBC (main.js shows this tab again then)
-    if (!this.dbc) {
+    const adas = this.sigBus === 'ADAS';
+    if (adas && !this.app.commaConnected) this.sigBus = 'IBUS1';
+    const bus = this.sigBus;
+    const dbc = bus === 'ADAS' ? this.app.dbc : this.app.ibusDbc;
+    body.append(el('div.subnav', this.app.segmented(SIG_SOURCES.filter(([k]) => k !== 'ADAS' || this.app.commaConnected), bus,
+      v => { this.sigBus = v; this.show('signals'); })));
+    if (!dbc || !dbc.messages.length) {
       body.append(el('p.desc', 'Loading DBC…'));
       return;
     }
-    const filter = el('input.sig-filter', { type: 'search', placeholder: 'Filter messages or signals (e.g. Obj1, USS, 0x31C)', value: this.sigFilter || '' });
+    const ids = bus === 'ADAS' ? null : new Set(RX_IDS[bus]);
+    const messages = dbc.messages.filter(m => !ids || ids.has(m.address));
+    const filter = el('input.sig-filter', { type: 'search', placeholder: 'Filter messages or signals (e.g. Obj1, VCU, 0x31C)', value: this.sigFilter || '' });
     const list = el('div');
-    body.append(el('p.desc', 'Live decoded ADASBUS messages (Fisker FM29 matrix), decoded on this screen from the frames the comma streams. Tap a message to watch its signals.'), filter, list);
+    body.append(el('p.desc', bus === 'ADAS'
+      ? 'Live decoded ADASBUS messages (Fisker FM29 matrix), from the frames the comma streams. Tap a message to watch its signals.'
+      : `Live decoded ${bus} messages (FM29 ${bus} matrix), as Pulse's CAN controller reads them from the car` +
+        (bus === 'IBUS2' ? ', the gateway\'s mirror of the ADAS bus among them' : '') +
+        `: the ${messages.length} messages the app listens for. Tap a message to watch its signals.`), filter, list);
     const draw = () => {
       const q = (this.sigFilter || '').toLowerCase();
       list.innerHTML = '';
       this.msgNodes = new Map();
-      for (const m of this.dbc.messages) {
+      for (const m of messages) {
         const hex = '0x' + m.address.toString(16).toUpperCase().padStart(3, '0');
         const match = !q || m.name.toLowerCase().includes(q) || hex.toLowerCase().includes(q) ||
           m.signals.some(s => s.name.toLowerCase().includes(q) || (s.comment || '').toLowerCase().includes(q));
         if (!match) continue;
-        const open = this.expanded.has(hex);
-        const info = el('em', '');
+        const key = bus + '/' + hex;
+        const open = this.expanded.has(key);
+        const info = el('em', ''), via = el('i', '');
         const node = el('div.msg',
-          el('button', { onclick: () => { open ? this.expanded.delete(hex) : this.expanded.add(hex); draw(); this.subscribe(); } },
-            el('b', hex), el('small', `${m.name}${m.comment ? ' — ' + m.comment : ''}`), info));
+          el('button', { onclick: () => { open ? this.expanded.delete(key) : this.expanded.add(key); draw(); this.subscribe(); } },
+            el('b', hex), el('small', `${m.name}${m.comment ? ' — ' + m.comment : ''}`), via, info));
         let table = null;
         if (open) {
           table = el('table');
-          for (const s of m.signals) {
-            table.append(el('tr', { dataset: { sig: s.name } }, el('td', s.name, el('div', { style: { color: 'var(--muted)', fontFamily: 'var(--font)' } }, s.comment || '')),
+          for (const sg of m.signals) {
+            table.append(el('tr', { dataset: { sig: sg.name } }, el('td', sg.name, el('div', { style: { color: 'var(--muted)', fontFamily: 'var(--font)' } }, sg.comment || '')),
               el('td.v', '—')));
           }
           node.append(table);
         }
-        this.msgNodes.set(hex, { node, info, table, msg: m });
+        this.msgNodes.set(hex, { node, info, via, table, msg: m });
         list.append(node);
       }
       this.updateRaw();
     };
     filter.addEventListener('input', () => { this.sigFilter = filter.value; draw(); });
+    this.rawData = {};
     draw();
     this.subscribe();
   }
 
-  subscribe() { this.app.subscribeRaw(this.tab === 'signals' ? [...this.expanded] : []); }
+  /** The worker watches the open messages of the bus on show (both IBUS buses come from one decoder). */
+  subscribe() {
+    const bus = this.sigBus, prefix = bus + '/';
+    const addrs = this.tab === 'signals' ? [...this.expanded].filter(k => k.startsWith(prefix)).map(k => k.slice(prefix.length)) : [];
+    // every message is watched for its age and rate; the open ones' signals are what the table shows
+    const all = this.msgNodes ? [...this.msgNodes.keys()] : [];
+    this.app.subscribeRaw(bus === 'ADAS' ? 'adas' : 'ibus', this.tab === 'signals' ? [...new Set([...addrs, ...all])] : []);
+  }
 
-  onRaw(data) {
+  onRaw(source, data) {
+    if ((source === 'adas') !== (this.sigBus === 'ADAS')) return;
     this.rawData = data;
     if (this.tab === 'signals' && this.isOpen) this.updateRaw();
   }
 
   updateRaw() {
     if (!this.msgNodes) return;
+    const busSrc = { IBUS1: 0, IBUS2: 2 }[this.sigBus];
     for (const [hex, n] of this.msgNodes) {
       const d = this.rawData[hex];
-      if (!d) continue;
-      n.info.textContent = `bus ${d.src} · ${d.age < 1 ? 'live' : d.age + ' s ago'}`;
+      // one decoder holds both IBUS buses: a message seen on the other one isn't this bus's
+      if (!d || (busSrc !== undefined && d.src !== busSrc)) { n.info.textContent = this.sigBus === 'ADAS' ? '' : 'not seen'; continue; }
+      n.info.textContent = `${d.count} frames · ${d.age < 1 ? 'live' : d.age + ' s ago'}`;
+      n.via.textContent = d.via === 'comma' ? 'via comma' : '';
       if (!n.table) continue;
       for (const tr of n.table.rows) {
         const name = tr.dataset.sig;
         const v = d.signals[name];
-        const sig = n.msg.signals.find(s => s.name === name);
+        const sig = n.msg.signals.find(sg => sg.name === name);
         const lbl = sig && sig.values && v != null ? sig.values[String(Math.round((v - sig.offset) / sig.factor))] : null;
         const td = tr.cells[1];
         const text = v == null ? '—' : `${v}${sig && sig.unit ? ' ' + sig.unit : ''}`;
@@ -517,19 +553,23 @@ export class Settings {
 
   async renderAbout() {
     const body = this.body;
-    let st;
-    try { st = await api('/api/status'); } catch (e) { body.append(el('div.banner.bad', e.message)); return; }
+    const src = { car: this.app.state && this.app.state.comma ? "The car's IBUS1/IBUS2, with the comma's ADAS bus, radar and openpilot" : "The car's IBUS1/IBUS2",
+      comma: 'The comma alone (no car buses here)', replay: 'A drive the comma is replaying', none: 'Nothing yet: the car is asleep, or this isn\'t the car\'s screen' }[this.app.source];
+    body.append(el('div.section', el('h3', 'Driving data'), el('div.kv', el('span', 'Source'), el('span', src))));
+    let st = null;
+    if (this.app.commaConnected) { try { st = await api('/api/status'); } catch { st = null; } }
     if (this.tab !== 'about') return;
-    body.append(el('div.section', el('h3', 'Open this HUD'), el('div.kv',
-      ...st.urls.flatMap(u => [el('span', u.includes('.local') ? 'mDNS' : 'IP'), el('a', { href: u }, u)]))));
-    body.append(el('div.section', el('h3', 'Status'), el('div.kv',
-      el('span', 'Version'), el('span', st.version),
-      el('span', 'Mode'), el('span', st.mode),
-      el('span', 'Car'), el('span', st.brand || 'unknown'),
-      el('span', 'mDNS'), el('span', `${st.hostname} via ${st.mdns}`),
-      el('span', 'Onroad'), el('span', st.onroad ? 'yes' : 'no'),
-      el('span', 'Live data'), el('span', st.liveError ? `unavailable (${st.liveError})` : 'ok'),
-    )));
+    if (st) {
+      body.append(el('div.section', el('h3', 'Comma'), el('div.kv',
+        el('span', 'Bridge'), el('span', st.version),
+        el('span', 'Mode'), el('span', st.mode),
+        el('span', 'Car'), el('span', st.brand || 'unknown'),
+        el('span', 'mDNS'), el('span', `${st.hostname} via ${st.mdns}`),
+        el('span', 'Onroad'), el('span', st.onroad ? 'yes' : 'no'),
+        el('span', 'Live data'), el('span', st.liveError ? `unavailable (${st.liveError})` : 'ok'),
+        ...st.urls.flatMap(u => [el('span', u.includes('.local') ? 'mDNS' : 'IP'), el('a', { href: u }, u)]),
+      )));
+    }
     body.append(el('p.desc', 'Touch: one finger rotates around the car, two fingers zoom and pan. The view recenters on the car a few seconds after you let go.'));
     body.append(el('div.section', el('h3', 'Credits'), el('p.desc',
       'Fisker Ocean 3D model: Pulse Ocean v0.10. Paint colors are approximations of the factory paint chips (',
