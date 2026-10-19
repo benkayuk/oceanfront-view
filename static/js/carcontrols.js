@@ -9,6 +9,7 @@
 // car reports (carcatalog.js `live`, from carstate.js), and so does the 3D car: doors, liftgate, windows,
 // sunroof, seats, lamps. Setting a control sends the head unit's own message (`tx`, through cancmd.js and
 // the app) and the car's answer shows when it comes; what can't be sent is greyed with the reason (`off`).
+// Assist's ACC settings (`acc`) go to the comma instead, which sends them to the ADAS module (accsettings.js).
 // In a plain browser nothing is live and nothing is sent: the values live in this page (this.v).
 import * as THREE from '../vendor/three.module.min.js';
 import { $, $$, el, iconSvg, setClass, setText } from './util.js';
@@ -16,12 +17,14 @@ import { CATEGORIES, DRIVE_MODES, SEAT_LIMITS, SEAT_MEMORY, MSG, defaults, liveC
 import { ZONES, ANCHORS } from './cutaway.js';
 import { ApaMock, APA_SIGNALS } from './apamock.js';
 import { AppUpdate } from './appupdate.js';
+import { AccSettings } from './accsettings.js';
 
 const OVERVIEW = { at: [0, 0.6, 2.4], az: 180, el: 90, fit: [2.3, 5.1] };   // top down, nose up...
 const OVERVIEW_WIDE = { at: [0, 0.6, 2.4], az: 90, el: 90, fit: [5.1, 2.3] };   // ...or right, on a short screen
 const SHORT_PX = 420;     // free height below which the overview turns the car on its side
 const MOCK_OFF = 'Mockup: nothing on the car for this';   // carcatalog.js MOCK: off in the browser too
 const LIVE_SYNC_S = 0.2;   // how often the controls take the car's values
+const ACC_POLL_MS = 3000;  // how often Assist re-reads the comma's ACC settings while it's open
 const SEAT_HEAT = 0xff6a2a;
 const CARD_GAP = 56;      // px between a card and the point it's about
 const CARDS_MIN_W = 840;  // px of free width that fits two cards beside the car (landscape only; portrait puts them in the sheet)
@@ -66,6 +69,9 @@ export class CarControls {
     this.memory = Object.fromEntries(Object.entries(SEAT_MEMORY).map(([k, p]) => [k, { ...p }]));   // the driver's saved positions
     this.apa = null;     // the mock automated parking, while it runs (apamock.js)
     this.appUpdate = new AppUpdate(app);   // Software: the app's version and its updates (appupdate.js)
+    this.acc = new AccSettings(app);       // Assist's ACC settings, on the comma (accsettings.js)
+    this.accDefs = [...this.defs.values()].filter(c => c.acc);
+    this._accWhy = undefined;
     this._p = new THREE.Vector3();
     this._c = new THREE.Vector3();
     this.buildRibbon();
@@ -76,6 +82,8 @@ export class CarControls {
   /** Whether a change goes to the car (the app's CAN link is up). */
   get sending() { return !!(this.cmd && this.cmd.available); }
   get inApp() { return !!window.WebHudApp; }
+  /** Whether Assist's ACC settings are the comma's (else, in a plain browser without it, the mockup's). */
+  get accLive() { return this.inApp || this.app.commaConnected; }
   get portrait() { return window.innerWidth <= window.innerHeight; }
   get category() { return this.find(this.cat); }
   find(id) { return CATEGORIES.find(c => c.id === id) || (this.apa && id === 'apa' ? this.apa.category : null); }
@@ -132,6 +140,7 @@ export class CarControls {
       }
     });
     if (!this.liveIds.has('energy.port')) this.v['energy.port'] = !!c && c.id === 'energy';   // the mockup's port opens to show it
+    if (c && c.id === 'assist') this.loadAcc();
     this.cardsShown = !!(c && c.cards) && this.roomForCards();
     this.showPanel(c && (c.sections || !this.cardsShown) ? c : null);
     this.buildPins(c);
@@ -438,7 +447,7 @@ export class CarControls {
   // place the pins next to their points (after the scene has rendered, so the camera is this frame's)
   frame(dt) {
     this._syncT += dt;
-    if (this._syncT > LIVE_SYNC_S) { this._syncT = 0; this.syncLive(); }
+    if (this._syncT > LIVE_SYNC_S) { this._syncT = 0; this.syncLive(); this.syncAcc(); }
     if (!this.isOpen) return;
     this._tick(dt);
     // refresh the sheet's live read-outs (Energy's status line) as CAN data arrives (~5 Hz)
@@ -576,6 +585,40 @@ export class CarControls {
     }
   }
 
+  // Assist's ACC settings as the comma has them
+  loadAcc() {
+    this._accAt = performance.now();
+    this.acc.load().then(() => { this.takeAcc(); this.notify(); });
+  }
+
+  takeAcc() {
+    if (!this.accLive) return;
+    for (const c of this.accDefs) {
+      const r = this.acc.value(c.acc.sig);
+      if (r !== undefined) this.v[c.id] = c.acc.from(r);
+    }
+  }
+
+  // while Assist is open, the comma's settings now and then (the car stopping unlocks them), and the
+  // controls greyed or not as the comma comes and goes
+  syncAcc() {
+    if (this.cat !== 'assist' || !this.accLive) return;
+    if (this.app.commaConnected && !this.acc.loading && performance.now() - (this._accAt || 0) > ACC_POLL_MS) this.loadAcc();
+    const why = this.acc.why;
+    if (why !== this._accWhy) { this._accWhy = why; this.notify(); }
+  }
+
+  async setAcc(c, value) {
+    if (this.acc.why) { this.app.toast(this.acc.why); this.notify(); return; }
+    this.v[c.id] = value;   // shown at once; the comma's answer settles it
+    this.notify();
+    await this.acc.set({ [c.acc.sig]: c.acc.to(value) });
+    if (this.acc.busy) return;   // more on the way: the last one's answer has them all
+    this.takeAcc();   // the comma's answer, or back to what it has
+    this.apply();
+    this.notify();
+  }
+
   // the body as the car reports it: doors, liftgate, windows, sunroof (the lamps follow through the HUD's own lamp state)
   applyBody() {
     const v = this.v, cut = this.cut;
@@ -602,6 +645,7 @@ export class CarControls {
   set(id, value) {
     const def = this.defs.get(id);
     if (def && def.off && (this.inApp || def.off === MOCK_OFF)) { this.app.toast(def.off); return; }
+    if (def && def.acc && this.accLive) { this.setAcc(def, value); return; }
     if (def && def.tx && this.inApp) {
       if (!this.sending) { this.app.toast(this.cmd.why || 'Not connected to the car'); return; }
       def.tx(this.cmd, value, this.app.carState);
@@ -727,6 +771,7 @@ export class CarControls {
   // greyed, and says why when tapped.
   control(c, as) {
     const node = as === 'tile' ? this.tile(c) : this._control(c);
+    if (node && c.acc) this.accOff(node);
     if (node && c.off && (this.inApp || c.off === MOCK_OFF)) {
       node.classList.add('off');
       node.title = c.off;
@@ -738,6 +783,21 @@ export class CarControls {
       if (node.tagName === 'BUTTON') node.disabled = true;
     }
     return node;
+  }
+
+  // an ACC setting greyed, with why, while the comma can't take it (not there, the car moving, an old comma)
+  accOff(node) {
+    const lock = icon('lock');
+    const paint = () => {
+      const why = this.accLive ? this.acc.why : null;
+      setClass(node, 'off', !!why);
+      node.title = why || '';
+      if (!node.classList.contains('fo-row')) return;
+      if (why && !lock.parentNode) node.insertBefore(lock, node.lastElementChild);
+      else if (!why) lock.remove();
+    };
+    this.watch(paint, true);
+    paint();
   }
 
   // A toggle or an action as a cell: its glyph goes blue when on
@@ -880,7 +940,8 @@ export class CarControls {
 
   // a range: a hairline track and a pill thumb that carries the value (design.css .fo-slider)
   sliderRow(c) {
-    const fmt = (x) => `${c.min < 0 && x > 0 ? '+' : ''}${x}${c.unit ? (c.unit.startsWith('%') ? c.unit : ' ' + c.unit) : ''}`;
+    const unit = () => (typeof c.unit === 'function' ? c.unit(this.v) : c.unit);
+    const fmt = (x) => { const u = unit(); return `${c.min < 0 && x > 0 ? '+' : ''}${x}${u ? (u.startsWith('%') ? u : ' ' + u) : ''}`; };
     const thumb = el('div.fo-slider__thumb');
     const input = el('input', { type: 'range', min: c.min, max: c.max, step: c.step, value: this.v[c.id] });
     const track = el('div.fo-slider__track', thumb, input);

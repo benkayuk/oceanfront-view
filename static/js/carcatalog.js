@@ -26,6 +26,8 @@
 //   checks, seatpos (a seat's adjusters), hold (buttons held: down/up), button (style, toast), action (does
 //   something on the car: action), list (items), info (items [key, value]), hero (energy summary), lock
 //   (locked / unlocked), note (text).
+// A control with `acc` is one of the ACC settings the comma sends the ADAS module (accsettings.js, the comma's
+// ICC_0x52A override): { sig, to, from } maps the control's value to the signal's raw value and back.
 
 // ---- the head unit's messages the HUD sends (ibus_tables.js TX_MESSAGES) ------------------------------
 export const MSG = { BODY: 0x4E, CLIMATE: 0x530, CLIMATE2: 0x534, PROFILE: 0x90, SEATHEAT: 0x528, SEATMOVE: 0x533, LIFTGATE: 0x52 };
@@ -55,6 +57,8 @@ const R = (id, label, min, max, step, def, unit, sub, x = {}) => ({ id, type: 's
 const SEL = (id, label, options, def, sub, x = {}) => ({ id, type: 'select', label, options, def, sub, ...x });
 const B = (label, toast, style, sub) => ({ type: 'button', label, toast, style, sub, off: MOCK });
 const ACT = (label, action, style, sub, x = {}) => ({ type: 'action', label, action, style, sub, ...x });   // carcontrols.js actions
+// an ICC_0x52A signal the comma overrides (accsettings.js): a toggle's on/off raw values, or the raw value as is
+const ACC = (sig, on, off) => ({ sig, to: on === undefined ? (v) => v : (v) => (v ? on : off), from: on === undefined ? (r) => r : (r) => r === on });
 
 // ---- option lists from the DBCs (raw value -> label) --------------------------------------------------
 const OFF_WARN_BRAKE = [[0, 'Off'], [1, 'Warn'], [2, 'Warn + brake']];             // ICC_FACM_Setting, ICC_BACM_Setting, ICC_FCTA_Setting
@@ -209,19 +213,23 @@ export const CATEGORIES = [
     focus: { at: [0, 0.4, -0.7], az: 32, el: 34, fit: [6.4, 4.4] },
     sections: [
       {
-        note: 'The driver-assistance settings go to the car through the comma: gear → CAN settings. These show the head unit\'s own values.',
+        note: 'The driver-assistance settings go to the car through the comma: gear → CAN settings. Adaptive cruise, auto speed, ' +
+          'terrain and the speed-limit offset are set here, on the comma, and apply at once; the rest show the head unit\'s own values.',
         controls: [T('icc.global', 'Active safety', true, null, { off: ADAS })],   // ICC_ActvStyGlblSetting (0 = On)
       },
       {
         title: 'Cruise',
         controls: [
-          T('icc.acc', 'Adaptive cruise', true, null, { off: ADAS }),                                                       // ICC_ACCSwt
+          T('icc.acc', 'Adaptive cruise', true, 'Off leaves the ADAS module\'s cruise off', { acc: ACC('ICCACCSwt', 1, 2) }),
           S('icc.accType', 'Cruise type', [[1, 'Basic'], [2, 'Advanced'], [3, 'ISA']], 2, null, { off: ADAS }),            // ICC_ACCFuncTyp
           S('icc.gap', 'Following distance', [[1, '1'], [2, '2'], [3, '3'], [4, '4']], 3, null, { off: ADAS }),             // ICC_UsrProfTiGapSet
-          T('icc.autoSpeed', 'Set speed follows the limit', false, null, { off: ADAS }),                                    // ICC_ACCAutoSpdSts
-          S('icc.offsetType', 'Over the limit', [[0, 'Never'], [1, 'Percent'], [2, 'Fixed']], 1, null, { off: ADAS }),      // ICC_ACCSpdLimOffsTyp
+          T('icc.autoSpeed', 'Set speed follows the limit', true, null, { acc: ACC('ICCACCAutoSpdSts', 1, 0) }),
+          S('icc.offsetType', 'Over the limit', [[0, 'Never'], [1, 'Percent'], [2, 'Fixed']], 0, 'How far auto speed may set above the limit',
+            { acc: ACC('ICCACCSpdLimOffsTyp') }),
+          R('icc.offset', 'Speed-limit offset', 0, 31.5, 0.5, 0, (v) => (v['icc.offsetType'] === 1 ? '%' : ''), '% of the limit, or a fixed speed over it',
+            { acc: ACC('ICCACCSpdLimOffs') }),
           S('icc.step', 'Set-speed step', [[0, '1'], [1, '5']], 1, null, { off: ADAS }),                                    // ICC_ACCSpdStepSize
-          T('icc.terrain', 'ACC Terrain Mode', false, null, { off: 'Set under the gear menu → Driving → ACC Terrain Mode; restart the comma to apply' }),                                         // ICC_ACCTerrainSetting
+          T('icc.terrain', 'ACC Terrain Mode', false, 'The factory ACC terrain setting; its effect on driving is unverified', { acc: ACC('ICCACCTerrainSetting', 1, 0) }),
           T('icc.lcAssist', 'Lane change assist', true, null, { off: ADAS }),                                               // ICC_EnbLnChgAsst
           T('icc.trajectory', 'Show the planned path', true, null, { off: ADAS }),                                          // ICC_LaneTrajectorySetting
         ],

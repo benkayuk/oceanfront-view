@@ -225,15 +225,16 @@ export class Settings {
       this.app.segmented([['0', 'Aggressive'], ['1', 'Standard'], ['2', 'Relaxed']], String(p.LongitudinalPersonality ?? 1), v => put({ LongitudinalPersonality: Number(v) })),
     ));
     if (typeof p.FiskerACCTerrain === 'boolean') {
+      const toggles = [['FiskerACCAutoSpeed', 'ACC auto speed', 'Set speed follows the speed limit.'],
+        ['FiskerACCTerrain', 'ACC Terrain Mode', 'The factory ACC terrain setting. Its effect on driving behavior is unverified.']];
       body.append(el('div.section',
-        el('h3', 'Fisker ACC'),
-        el('div.row', el('div.lbl', el('b', 'ACC Terrain Mode'),
-          el('small', 'Enable the factory ACC terrain setting. Its effect on driving behavior is unverified. Save while parked, then restart the comma to apply.')),
-          this.app.switch(p.FiskerACCTerrain, v => put({ FiskerACCTerrain: v }))),
-      ));
+        el('h3', 'Fisker ACC defaults'),
+        el('p.desc', 'The comma\'s own toggles, applied after a restart. Car → Assist sets these live and wins over them once set there.'),
+        el('div.rows', toggles.filter(([k]) => typeof p[k] === 'boolean').map(([k, t, d]) =>
+          el('div.row', el('div.lbl', el('b', t), el('small', d)), this.app.switch(p[k], v => put({ [k]: v })))))));
     } else {
       body.append(el('div.section', el('h3', 'Fisker ACC'),
-        el('p.desc', 'ACC Terrain Mode requires an updated comma WebHUD server.')));
+        el('p.desc', 'The ACC defaults require an updated comma WebHUD server.')));
     }
     body.append(el('div.section', el('div.rows',
       el('div.row', el('div.lbl', el('b', 'Experimental mode'), el('small', 'End-to-end longitudinal from the driving model.')),
