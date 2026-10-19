@@ -165,6 +165,7 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 ```
 
 Release builds are signed with the debug key, since the app is sideloaded, not published.
+A built APK is attached to each release on GitHub (https://github.com/moistpope/oceanfront-view/releases).
 
 The APK must be rebuilt for a change to the page (its files are copied in at build time); `serve.py` at
 the top of the checkout serves the same files to a plain browser.

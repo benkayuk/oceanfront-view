@@ -42,6 +42,8 @@ npm test                                       # node --test static/js/world/tes
 cd android && ./gradlew assembleRelease        # the APK (JDK 17+, Android SDK)
 ```
 
+A built APK is attached to each [release](https://github.com/moistpope/oceanfront-view/releases).
+
 ## What it shows
 
 Speed, gear, MADS steering state, ACC set speed and time gap, speed limit, alerts, the ADAS module's
