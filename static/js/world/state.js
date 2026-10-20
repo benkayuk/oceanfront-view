@@ -109,8 +109,19 @@ export class StateBuilder {
     }
   }
 
-  /** Where the pose's fixes and heading come from: 'car' (the TBOX on CAN) or 'device' (feedLocation). */
-  setPositionSource(src) { this.positionSource = src === 'device' ? 'device' : 'car'; }
+  /** Where the pose's fixes and heading come from: 'car' (the TBOX on CAN) or 'device' (feedLocation). A change
+   *  starts the pose over, and with it the map (its origin, the matched road, the roads layer): the old source's
+   *  fixes may be what was wrong, so the new source's first fix places the car and the map at once instead of
+   *  gliding over from where the old one had it. */
+  setPositionSource(src) {
+    src = src === 'device' ? 'device' : 'car';
+    if (src === this.positionSource) return;
+    this.positionSource = src;
+    this.pose.reset();
+    if (this.matcher) this.matcher.reset();
+    this._roads = null;
+    this._gpsCanT = -1e9;
+  }
 
   /** A fix from the screen's own location, received at t (page clock, s): {lat, lon, acc (m), speed (m/s), bearing
    *  (deg clockwise from north), fixT (when it was taken, same clock)}. Ignored unless the position source is 'device'.
