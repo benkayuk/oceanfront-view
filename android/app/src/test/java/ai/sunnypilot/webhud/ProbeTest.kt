@@ -51,7 +51,7 @@ class ProbeTest {
 
     @Test
     fun closedPortFailsFast() {
-        val port = ServerSocket(0).use { it.localPort }
+        val port = closedPort()
         val t0 = System.nanoTime()
         assertNull(Probe.status("127.0.0.1", port))
         assertTrue((System.nanoTime() - t0) / 1_000_000 < 1000)
@@ -62,7 +62,7 @@ class ProbeTest {
         val port = serve(http("200 OK", status))
         val loopback = InetAddress.getByName("127.0.0.1")
         assertEquals(Probe.Sweep(listOf(loopback), emptyList()), Probe.sweep(listOf(loopback), port, 500))
-        val closed = ServerSocket(0).use { it.localPort }
+        val closed = closedPort()
         assertEquals(Probe.Sweep(emptyList(), listOf(loopback)), Probe.sweep(listOf(loopback), closed, 500))
     }
 }

@@ -114,7 +114,7 @@ class LocalServerTest {
 
     @Test
     fun unreachableDeviceIsReported() {
-        val gone = ServerSocket(0).use { it.localPort }
+        val gone = closedPort()
         server.setDevice(InetSocketAddress("127.0.0.1", gone))
         open().use { assertTrue(it.closedByPeer()) }
         assertEquals(1, unreachable.get())
