@@ -116,7 +116,7 @@ class LocalServer(
         val method = line.getOrNull(0).orEmpty()
         val target = line.getOrNull(1).orEmpty()
         val path = target.substringBefore('?')
-        if (path == "/ws" || path.startsWith("/api/")) {
+        if (path == "/ws" || path == "/video" || path.startsWith("/api/")) {
             relay(client, head)
         } else {
             try {

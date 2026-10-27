@@ -12,6 +12,7 @@ import { CarState } from './carstate.js';
 import { CarCommands } from './cancmd.js';
 import { Settings } from './settings.js';
 import { VehicleState } from './vehicle.js';
+import { RoadCam } from './roadcam.js';
 
 const SETTINGS_VERSION = 3;
 const AUTO_VIEW_HOLD_MS = 10000;   // a parking maneuver starting this soon after the user picked a view keeps it
@@ -25,7 +26,7 @@ const DEFAULTS = {
   showTracks: true, showRadar: false, radarAllTracks: false, showLowConf: false, showObjectStats: false, objectMode: 'world',
   laneHeadingSign: 1, laneCurvatureSign: 1, objectHeadingSign: 1, laneConfThreshold: LANE_CONF_THRESHOLD,
   showFps: true, renderScale: 'auto', showMusic: true, showNav: true, demoInfotainment: false, demoCarState: false,
-  calibration: true, mapPrefetchKm: 25, positionSource: 'car',
+  calibration: true, mapPrefetchKm: 25, positionSource: 'car', roadcam: 'road',
 };
 
 function loadSettings() {
@@ -77,6 +78,7 @@ class App {
     this.vehicle = new VehicleState();
     this.ui = new Settings(this);
     this.car = new CarControls(this);   // the car controls mockup (tap the car)
+    this.roadcam = new RoadCam(this);   // the comma's camera with its overlay, instead of the 3D view
     this.applyTheme();
     this.scene.setEgoLook(this.settings.egoPaint, this.settings.egoWheels);
     this.setView(this.settings.view, true);
@@ -119,7 +121,9 @@ class App {
       const state = mock ? mock.state : this.liveState(), settings = mock ? mock.settings : this.settings;
       try { this.vehicle.update(state, mock ? 0 : now - this.lastStateAt, dt); } catch (e) { this.reportError(e); }
       try { if (mock) this.scene.update(state, settings); } catch (e) { this.reportError(e); }
-      try { this.scene.frame(dt, this.vehicle); } catch (e) { this.reportError(e); }
+      // the 3D view rests while the camera view covers it
+      try { if (!this.roadcam.isOpen) this.scene.frame(dt, this.vehicle); } catch (e) { this.reportError(e); }
+      try { this.roadcam.frame(); } catch (e) { this.reportError(e); }
       try { this.car.frame(dt); } catch (e) { this.reportError(e); }
       try { if (state) this.hud.update(state, settings, this.vehicle); } catch (e) { this.reportError(e); }
       try { this.info.frame(dt); } catch (e) { this.reportError(e); }
@@ -437,6 +441,7 @@ class App {
       this.parkingStop = true;
       if (performance.now() - this.manualViewAt > AUTO_VIEW_HOLD_MS) {
         this.autoViewActive = true;
+        this.roadcam.close();   // parking: the top view over the camera
         this.scene.setView('top');
         this.markView('top');
       }
@@ -463,6 +468,12 @@ class App {
     document.addEventListener('pointerdown', (e) => { if (!$('#viewdock').contains(e.target)) showMenu(false); });
     $$('#viewmenu button[data-view]').forEach(b => b.addEventListener('click', () => {
       showMenu(false);
+      if (b.dataset.view === 'camera') {   // the comma's camera (roadcam.js): over the 3D view, which keeps its view
+        this.roadcam.open(this.settings.roadcam);
+        this.markView('camera');
+        return;
+      }
+      this.roadcam.close();
       this.autoViewActive = false;
       this.manualViewAt = performance.now();
       this.setSetting('view', b.dataset.view);

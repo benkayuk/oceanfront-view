@@ -32,7 +32,7 @@ BRIDGE: tuple[str, int] | None = None
 
 
 def relayed(path: str) -> bool:
-  return path == "/ws" or path.startswith(("/api/", "/map/"))
+  return path in ("/ws", "/video") or path.startswith(("/api/", "/map/"))
 
 
 def pump(src: socket.socket, dst: socket.socket) -> None:
@@ -109,7 +109,7 @@ class Handler(SimpleHTTPRequestHandler):
     pump(up, client)                                                        # the response down
 
   def log_message(self, fmt, *args) -> None:   # noqa: A002
-    if not str(args[0]).startswith(("GET /ws", "GET /api/")):
+    if not str(args[0]).startswith(("GET /ws", "GET /video", "GET /api/")):
       super().log_message(fmt, *args)
 
 
