@@ -74,16 +74,16 @@
   <!-- traffic light / sign (top right) -->
   <div id="roadinfo" class="roadinfo"></div>
 
-  <!-- view dock: the camera views (a menu behind the camera button) and the HUD settings -->
+  <!-- view dock: the HUD settings, the comma's live camera (on/off) and the 3D view's angles (a menu behind the camera button) -->
   <div id="viewdock" class="viewdock">
     <div id="viewmenu" class="viewmenu hidden" role="menu">
       <button data-view="chase" class="on" role="menuitemradio">Chase</button>
       <button data-view="top" role="menuitemradio">Top</button>
       <button data-view="close" role="menuitemradio">Close</button>
       <button data-view="far" role="menuitemradio">Wide</button>
-      <button data-view="camera" role="menuitemradio" title="The comma's road camera, with its path and lanes">Comma camera</button>
     </div>
     <button id="btn-settings" class="icon" title="Settings" aria-label="Settings"></button>
+    <button id="btn-roadcam" class="icon" title="Comma camera: the live camera with its path and lanes, or back to the 3D view" aria-label="Comma camera" aria-pressed="false"></button>
     <button id="btn-camera" class="icon" title="Camera view" aria-label="Camera view" aria-haspopup="menu"></button>
   </div>
 

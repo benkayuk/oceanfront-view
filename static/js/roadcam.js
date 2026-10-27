@@ -53,6 +53,7 @@ export class RoadCam {
     this.isOpen = true;
     setClass(this.root, 'hidden', false);
     document.body.classList.add('roadcam-on');
+    this.markButton();
     if (!RoadCam.supported) { this.say('This screen can’t decode the camera video (no WebCodecs in its WebView).'); return; }
     this.say('Connecting to the comma…');
     this.connect();
@@ -63,6 +64,7 @@ export class RoadCam {
     this.isOpen = false;
     setClass(this.root, 'hidden', true);
     document.body.classList.remove('roadcam-on');
+    this.markButton();
     clearTimeout(this.retryTimer);
     const ws = this.ws;
     this.ws = null;
@@ -79,6 +81,14 @@ export class RoadCam {
     this.app.setSetting?.('roadcam', camera);
     this.resetDecoder();   // its output is tied to the camera it decodes
     this.send({ type: 'camera', camera });
+  }
+
+  /** The dock's live camera button shows whether the camera view is up. */
+  markButton() {
+    const b = $('#btn-roadcam');
+    if (!b) return;
+    setClass(b, 'on', this.isOpen);
+    b.setAttribute('aria-pressed', String(this.isOpen));
   }
 
   markCamera() {

@@ -465,15 +465,18 @@ class App {
       cam.setAttribute('aria-expanded', String(on));
     };
     cam.addEventListener('click', () => showMenu(menu.classList.contains('hidden')));
+    // the comma's live camera (roadcam.js) over the 3D view, on and off; the 3D view keeps its angle
+    const live = $('#btn-roadcam');
+    live.innerHTML = iconSvg('video');
+    live.addEventListener('click', () => {
+      showMenu(false);
+      if (this.roadcam.isOpen) this.roadcam.close();
+      else this.roadcam.open(this.settings.roadcam);
+    });
     document.addEventListener('pointerdown', (e) => { if (!$('#viewdock').contains(e.target)) showMenu(false); });
     $$('#viewmenu button[data-view]').forEach(b => b.addEventListener('click', () => {
       showMenu(false);
-      if (b.dataset.view === 'camera') {   // the comma's camera (roadcam.js): over the 3D view, which keeps its view
-        this.roadcam.open(this.settings.roadcam);
-        this.markView('camera');
-        return;
-      }
-      this.roadcam.close();
+      this.roadcam.close();   // an angle is for the 3D view
       this.autoViewActive = false;
       this.manualViewAt = performance.now();
       this.setSetting('view', b.dataset.view);
