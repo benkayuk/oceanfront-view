@@ -31,6 +31,10 @@ and openpilot, and the app manages it over SSH.
 - **Live car controls:** locks, doors, windows, sunroof, mirrors, lights, climate, seats and energy,
   reflected on the 3D car. Controls send the head unit's own CAN messages; ones that can't are greyed out.
 - **Music and navigation:** now-playing and next-turn cards from the head unit, with a turn arrow on the road.
+- **Comma camera:** the comma's road (or wide) camera with the path, lane lines, road edges and lead it
+  draws on its own screen, from the bridge's `/video` socket (the video button beside the camera button turns it on and off). The video is
+  the comma's livestream H.264, decoded by the WebView (WebCodecs); the overlay is drawn on each frame from
+  the model output computed from that frame (`static/js/roadcam.js`).
 - **Comma tab:** SSH management of the comma (start/stop openpilot, logs, processes, routes and replay,
   updates, branch and fork switching, panda firmware).
 - **Debug tools:** *Signals* tab (live CAN browser), object stats, radar tracks, frame-rate counter

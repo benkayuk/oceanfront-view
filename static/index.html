@@ -30,6 +30,15 @@
 <div id="app">
   <canvas id="scene"></canvas>
   <div id="olabels" aria-hidden="true"></div>
+  <!-- the comma's camera with its overlay (roadcam.js), over the 3D view while it's chosen -->
+  <div id="roadcam" class="roadcam hidden">
+    <canvas id="roadcam-canvas"></canvas>
+    <div id="roadcam-status" class="roadcam-status hidden" aria-live="polite"></div>
+    <div class="roadcam-cams" role="radiogroup" aria-label="Camera">
+      <button data-roadcam="road" class="on" role="radio">Road</button>
+      <button data-roadcam="wide" role="radio">Wide</button>
+    </div>
+  </div>
 
   <!-- driving status: top-left card in landscape, full-width header in portrait -->
   <section id="drive" class="card">
@@ -65,7 +74,7 @@
   <!-- traffic light / sign (top right) -->
   <div id="roadinfo" class="roadinfo"></div>
 
-  <!-- view dock: the camera views (a menu behind the camera button) and the HUD settings -->
+  <!-- view dock: the HUD settings, the comma's live camera (on/off) and the 3D view's angles (a menu behind the camera button) -->
   <div id="viewdock" class="viewdock">
     <div id="viewmenu" class="viewmenu hidden" role="menu">
       <button data-view="chase" class="on" role="menuitemradio">Chase</button>
@@ -74,6 +83,7 @@
       <button data-view="far" role="menuitemradio">Wide</button>
     </div>
     <button id="btn-settings" class="icon" title="Settings" aria-label="Settings"></button>
+    <button id="btn-roadcam" class="icon" title="Comma camera: the live camera with its path and lanes, or back to the 3D view" aria-label="Comma camera" aria-pressed="false"></button>
     <button id="btn-camera" class="icon" title="Camera view" aria-label="Camera view" aria-haspopup="menu"></button>
   </div>
 
