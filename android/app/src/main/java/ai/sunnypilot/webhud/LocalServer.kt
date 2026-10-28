@@ -124,6 +124,7 @@ class LocalServer(
                 when {
                     path.startsWith("/map/tile/") -> serveTile(client, method, path, text)
                     path.startsWith("/map/features/") -> serveFeatures(client, method, path, text)
+                    path.startsWith("/map/ways/") -> serveWays(client, method, path)
                     path == "/map/prefetch" || path == "/map/status" -> servePrefetch(client, method, path, text)
                     path.startsWith("/app/") -> serveApp(client, method, path, target.substringAfter('?', ""), text)
                     else -> serveAsset(client, method, path, text)
@@ -305,6 +306,19 @@ class LocalServer(
         out.flush()
     }
 
+    /** A road tile's full way detail (MapFeatures.ways): from Overpass once, then from disk. */
+    private fun serveWays(client: Socket, method: String, path: String) {
+        val out = client.getOutputStream()
+        val parsed = MapFeatures.parseWaysPath(URLDecoder.decode(path, "UTF-8"))
+        val file = if (parsed == null || mapFeatures == null) null else mapFeatures.ways(parsed.first, parsed.second)
+        if (file == null) {
+            respond(out, 404, "Not Found", "text/plain", "no road detail for this tile".toByteArray(), emptyMap(), method == "HEAD")
+            return
+        }
+        respond(out, 200, "OK", "application/json", file.readBytes(), mapOf("Cache-Control" to "max-age=86400"), method == "HEAD")
+        out.flush()
+    }
+
     /** POST /map/prefetch {lat, lon, radius_km}: download the map around the car (MapPrefetch); GET /map/status: how far it got. */
     private fun servePrefetch(client: Socket, method: String, path: String, head: String) {
         val out = client.getOutputStream()
@@ -415,8 +429,9 @@ class LocalServer(
 
     companion object {
         private const val TAG = "WebHud"
-        /** Fixed, so the page's origin and its saved settings stay the same from launch to launch. */
-        const val PREFERRED_PORT = 18088
+        /** Fixed, so the page's origin and its saved settings stay the same from launch to launch; not Oceanfront View's
+         *  18088, so the two apps never take each other's port. */
+        const val PREFERRED_PORT = 18089
         const val WWW = "www"
         private const val CONNECT_TIMEOUT_MS = 2000
         private const val HEAD_TIMEOUT_MS = 5000

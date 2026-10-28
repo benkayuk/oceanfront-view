@@ -9,6 +9,7 @@ import { hexToBytes } from './dbc.js';
 import { FiskerRadar } from './fisker_radar.js';
 import { PoseEstimator } from './pose.js';
 import { MapMatcher } from './mapmatch.js';
+import { lanesOf, laneLayout } from './roaddetail.js';
 
 /** A bridge tick's frames, [[address, bus, hex], ...], as the builder takes them. */
 export function wireFrames(frames) {
@@ -33,7 +34,6 @@ const DEVICE_LAG_S = [0.05, 2.0];
 // the roads around the car for the view's map layer: every drivable way within ROADS_R, rebuilt once the car has
 // moved ROADS_STEP from the last build (or the tiles changed), and sent only then
 const ROADS_R = 320, ROADS_STEP = 40;
-const LANE_W = 3.6;
 // the map's point features (mapdata.js feature cells) that ride along in the layer, by their OSM tag
 const FEATURE_KINDS = { traffic_signals: 'signal', stop: 'stop', give_way: 'yield', crossing: 'crossing', mini_roundabout: 'miniRoundabout' };
 const FEAT_MAX = 160;         // nearest first
@@ -43,13 +43,7 @@ const RANK = { motorway: 0, motorway_link: 0, trunk: 0, trunk_link: 0, primary: 
 const wrapA = (a) => (((a + Math.PI) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
 const r1 = (v) => Math.round(v * 10) / 10;
 
-/** A way's lane count when OSM doesn't say: two for a two-way road, two for a one-way road of a kind that is usually a
- *  carriageway of a divided road (motorway, trunk, primary and their links), one for any other one-way street. */
-export function lanesOf(way) {
-  if (way.lanes > 0) return way.lanes;
-  if (!way.oneWay) return 2;
-  return /^(motorway|trunk|primary)/.test(way.className || '') ? 2 : 1;
-}
+export { lanesOf };
 
 export class StateBuilder {
   /** worldDbc: the ADASBUS DBC (or the IBUS one, which carries the same signals); radarDbc: the radar's, or
@@ -286,8 +280,10 @@ export class StateBuilder {
       }
       if (pts.length < 2) continue;
       const way = w.way;
-      const lanes = lanesOf(way);
-      ways.push({ id: way.id, cls: way.cls, className: way.className, name: way.name, ref: way.ref, lanes, oneWay: !!way.oneWay, width: Math.round(lanes * LANE_W * 10) / 10, pts });
+      // the carriageway with the way's nodes: fwd lanes on the traffic side of its centerline, bwd on the other (roaddetail.js)
+      const L = laneLayout(way, 1);
+      ways.push({ id: way.id, cls: way.cls, className: way.className, name: way.name, ref: way.ref, lanes: L.lanes, oneWay: !!way.oneWay,
+        width: r1(L.width), laneW: Math.round(L.laneW * 100) / 100, fwd: L.ours, bwd: L.theirs, centre: L.centre, detailed: L.detailed, pts });
     }
     const features = this._features(x, y, R, near);
     const version = ++this._roadsSeq;
@@ -300,7 +296,7 @@ export class StateBuilder {
    *  continues into the next: [{id, kind, x, y, arms, ...}] nearest first (mapfeatures.js draws them). */
   _features(x, y, R, near) {
     const out = [];
-    const widthOf = (way) => lanesOf(way) * LANE_W;
+    const widthOf = (way) => laneLayout(way, 1).width;
     const arm = (w, h, forward) => ({ h: Math.round(h * 1000) / 1000, half: r1(widthOf(w.way) / 2), lanes: lanesOf(w.way), oneWay: !!w.way.oneWay, wayId: w.way.id, forward });
     // the ways with a node at a point: [{w, i}]
     const at = (px, py) => {

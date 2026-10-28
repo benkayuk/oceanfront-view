@@ -1419,7 +1419,7 @@ export class CarScene {
     // the car has strayed from for a moment
     const showMap = s.mapRoad !== false;
     this._alignMap(this.mapRef, zr);
-    this.roadnet.update(map, showMap);
+    this.roadnet.update(map, showMap, leftTraffic(s, this.state?.fisker));
     const f = this.state && this.state.fisker;
     this.ourSignal = this.mapFeatures.update(map, showMap && s.showSigns !== false, f ? f.tlr : null, this.pose, this.clock);
   }

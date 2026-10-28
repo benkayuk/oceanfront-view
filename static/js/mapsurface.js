@@ -53,11 +53,20 @@ function direction(xs, ys, i) {
   return [dx / L, dy / L];
 }
 
-/** The centers of the lanes going our way, m left of the carriageway's centerline, rightmost first. */
-export function laneCenters(lanes, oneWay, W = LANE_W, leftTraffic = false) {
-  if (oneWay) { const n = Math.max(1, lanes); return Array.from({ length: n }, (_, k) => -n * W / 2 + (k + 0.5) * W); }
-  const n = Math.max(2, lanes), ours = Math.max(1, Math.floor(n / 2)), turn = n % 2 ? W / 2 : 0;   // an odd count: a center turn lane
-  return Array.from({ length: ours }, (_, k) => leftTraffic ? turn + (k + 0.5) * W : -turn - (ours - k - 0.5) * W);
+/** A carriageway's lanes when the map gives only a count: all ours one way; else halved, an odd one a center turn lane. */
+export function splitOf(lanes, oneWay) {
+  if (oneWay) return { ours: Math.max(1, lanes), theirs: 0, centre: 0 };
+  const n = Math.max(2, lanes), half = Math.floor(n / 2);
+  return { ours: half, theirs: half, centre: n % 2 };
+}
+
+/** The centers of the lanes going our way, m left of the carriageway's centerline, rightmost first. `split`
+ *  ({ours, theirs, centre}, roaddetail.js laneLayout) when OSM says how many go each way. */
+export function laneCenters(lanes, oneWay, W = LANE_W, leftTraffic = false, split = null) {
+  const { ours, theirs, centre } = split || splitOf(lanes, oneWay);
+  const half = (ours + theirs + centre) * W / 2;
+  const right = leftTraffic ? (theirs + centre) * W - half : -half;   // our side's right edge
+  return Array.from({ length: ours }, (_, k) => Math.round((right + (k + 0.5) * W) * 1e9) / 1e9 + 0);   // (+ 0: no -0)
 }
 
 /** A fresh placement state (kept by the view between frames). */
@@ -77,8 +86,9 @@ export function placeInLane(place, frame, road, dt) {
   const k = (tau) => (place ? 1 - Math.exp(-Math.max(0, dt) / tau) : 1);
   // the lane width is the map's (LANE_W): the network's lines are drawn with it for every road, ours included, so the
   // placement must count in the same lanes (the cameras' measured width would put the two out of step)
+  if (frame.laneW > 0) p.laneW = frame.laneW;   // the road's own, when OSM gives its width (roaddetail.js)
   const W = p.laneW;
-  const centers = laneCenters(frame.lanes, frame.oneWay, W, frame.leftTraffic);
+  const centers = laneCenters(frame.lanes, frame.oneWay, W, frame.leftTraffic, frame.split);
   const Lmap = -frame.yMap0;   // the car's offset from the centerline (m left) by the pose
   // the ego lane's center at the car: measured, else the last one decaying to the lane's center
   let yCenter;
@@ -159,12 +169,16 @@ export function mapReference(map, pose, road, settings, rearAxleZ = REAR_AXLE_TO
   // (a horizon that ends at the car -- a junction mid-turn -- still places the map; the field fades where it ends)
 
   const way = map.way;
-  const lanes = way.oneWay ? Math.max(1, way.lanes || 0) : Math.max(2, way.lanes || 0);
+  const leftTr = settings?.trafficSide === 'left';
+  // the carriageway: the lanes each way and their width, from OSM's full detail when there is some (roaddetail.js)
+  const lay = way.layout || { ...splitOf(way.lanes || 0, !!way.oneWay), laneW: LANE_W, turns: null };
+  const split = { ours: lay.ours, theirs: lay.theirs, centre: lay.centre };
+  const lanes = split.ours + split.theirs + split.centre;
   // the map line at the car: its y and direction (station 0)
   const [, yMap0, seg0] = sample(xs, ys, st, 0);
   const [ux, uy] = direction(xs, ys, seg0);
   const hMap = Math.atan2(uy, ux);
-  const pl = placeInLane(place, { yMap0, hMap, lanes, oneWay: !!way.oneWay, wayId: way.id, leftTraffic: settings?.trafficSide === 'left' }, road, dt);
+  const pl = placeInLane(place, { yMap0, hMap, lanes, oneWay: !!way.oneWay, wayId: way.id, leftTraffic: leftTr, split, laneW: lay.laneW }, road, dt);
   const W = pl.laneW, half = lanes * W / 2, shift = pl.shift, dh = pl.dh;
   // the rigid placement: rotate about the car's spot on the line (station 0), slide sideways
   const px0 = 0, py0 = yMap0;
@@ -195,17 +209,13 @@ export function mapReference(map, pose, road, settings, rearAxleZ = REAR_AXLE_TO
   // two-way road (both edges of a center turn lane), the boundaries between lanes, the edges. The two lines
   // bounding the lane the car is drawn in are tagged L1 / R1 so the view can color them as the ego lane's.
   const structure = [];
-  const centers = laneCenters(lanes, !!way.oneWay, W, settings?.trafficSide === 'left');
   const egoR = pl.laneCenter - W / 2, egoL = pl.laneCenter + W / 2;
   const tag = (d) => (Math.abs(d - egoR) < 1e-6 ? 'R1' : Math.abs(d - egoL) < 1e-6 ? 'L1' : null);
   const push = (d, kind) => structure.push({ d, kind, ego: tag(d) });
-  if (way.oneWay) {
-    for (let k = 1; k < lanes; k++) push(-half + k * W, 'lane');
-  } else {
-    const turn = lanes % 2 ? W / 2 : 0;
-    if (turn) { push(turn, 'center'); push(-turn, 'center'); } else push(0, 'center');
-    for (let k = 1; k < centers.length; k++) { push(-turn - k * W, 'lane'); push(turn + k * W, 'lane'); }
-  }
+  // from the right edge: the lanes on the right of the centerline (ours, or theirs driving on the left), the shared
+  // center lane(s), the rest; the lines either side of the shared part are the center lines
+  const R = leftTr ? split.theirs : split.ours;
+  for (let k = 1; k < lanes; k++) push(-half + k * W, !way.oneWay && (k === R || k === R + split.centre) ? 'center' : 'lane');
   push(half, 'edge'); push(-half, 'edge');
   // the roads leaving the horizon, placed the same way (pose, then the turn and slide)
   const toCar = (wx, wy) => {
@@ -218,7 +228,7 @@ export function mapReference(map, pose, road, settings, rearAxleZ = REAR_AXLE_TO
   for (const b of map.branches || []) {
     if (!b.pts || b.pts.length < 2) continue;
     const bl = b.oneWay ? Math.max(BRANCH_MIN_LANES, b.lanes || 0) : Math.max(2, b.lanes || 0);
-    branches.push({ pts: b.pts.map(p => toCar(p[0], p[1])), width: bl * LANE_W, along: b.along, angle: b.angle, name: b.name, ref: b.ref, className: b.className, oneWay: b.oneWay,
+    branches.push({ pts: b.pts.map(p => toCar(p[0], p[1])), width: b.layout ? b.layout.width : bl * LANE_W, laneW: b.layout ? b.layout.laneW : LANE_W, along: b.along, angle: b.angle, name: b.name, ref: b.ref, className: b.className, oneWay: b.oneWay,
       merge: !!b.merge, end: !!b.end, continuation: !!b.continuation });
   }
   return {
@@ -230,9 +240,9 @@ export function mapReference(map, pose, road, settings, rearAxleZ = REAR_AXLE_TO
     reach: st[n - 1], back: -st[0], fade: map.ended ? END_FADE : FAR_FADE,
     centerY0, yMap0, shift, rotated: dh,   // the placement: the map line's y at the bumper by the pose, the slide and the turn about (0, yMap0)
     lane: pl.lane, laneW: W, laneCenter: pl.laneCenter, lanesShown: pl.shown,
-    ourLeft: way.oneWay || settings?.trafficSide === 'left' ? half : -(lanes % 2 ? W / 2 : 0), ourRight: !way.oneWay && settings?.trafficSide === 'left' ? (lanes % 2 ? W / 2 : 0) : -half,   // our carriageway's bounds, m left of the reference line
+    ourLeft: leftTr ? half : -half + split.ours * W, ourRight: leftTr ? half - split.ours * W : -half,   // our carriageway's bounds, m left of the reference line
     branches, structure,
-    lanes, oneWay: !!way.oneWay,
+    lanes, oneWay: !!way.oneWay, split, turns: lay.turns || null,
   };
 }
 
@@ -549,9 +559,9 @@ export function junctions(ref, hm) {
     const start = Math.max(...corners.map(k => k.tC)) + 2;
     let center = null;
     const lanes = [];
-    const bl = Math.max(1, Math.round(b.width / LANE_W));
+    const bW = b.laneW || LANE_W, bl = Math.max(1, Math.round(b.width / bW));
     if (!b.oneWay) center = fromDistance(bp, start);
-    else for (let k = 1; k < bl; k++) lanes.push(fromDistance(offsetPoly(bp, -hb + k * LANE_W), start));
+    else for (let k = 1; k < bl; k++) lanes.push(fromDistance(offsetPoly(bp, -hb + k * bW), start));
     const N = 24;
     arms.push({ strip: { left: resample(bounds[1], N), right: resample(bounds[-1], N) }, edges, arcs, center: center && center.length >= 2 ? center : null,
       lanes: lanes.filter(l => l.length >= 2), along: b.along, angle: b.angle, merge: !!b.merge, name: b.name || b.ref || '', side, s0, crossing: Math.abs(b.angle) * Math.PI / 180 > BOX_ANGLE });
@@ -599,7 +609,7 @@ const CONTINUE_ANG = 25 * Math.PI / 180; // end to end at less than this: the ro
 
 /** Build the network's drawing geometry from a roads layer.
  *  Returns { strips: [{left, right}], edges: [polyline], centers: [polyline], lanes: [polyline] } in the pose frame. */
-export function roadNetwork(layer) {
+export function roadNetwork(layer, leftTraffic = false) {
   const out = { strips: [], edges: [], centers: [], lanes: [] };
   if (!layer || !layer.ways) return out;
   const ways = layer.ways.filter(w => w.pts.length >= 2);
@@ -688,10 +698,19 @@ export function roadNetwork(layer) {
       if (other > 0) inner.push([s0 - other - NODE_CLEAR, s0 + other + NODE_CLEAR]);
     });
     out.edges.push(...cutByStations(left_, st, edgeCuts[1]), ...cutByStations(right_, st, edgeCuts['-1']));
-    if (!w.oneWay) {
+    const W = w.laneW || LANE_W;
+    if (!w.oneWay && w.detailed && w.fwd != null) {
+      // OSM says how many lanes go each way (roaddetail.js): from the right edge, the lanes driving with the way's nodes
+      // (against them where traffic keeps left), the shared center lane, the rest; center lines either side of the shared part
+      const R = leftTraffic ? w.bwd : w.fwd, C = w.centre || 0, n = w.fwd + w.bwd + C;
+      const centerAt = (d) => { for (const piece of cutByStations(pts, st, inner)) { if (C) out.centers.push(offsetPoly(piece, d)); else out.centers.push(offsetPoly(piece, d + 0.11), offsetPoly(piece, d - 0.11)); } };
+      centerAt(-h + R * W);
+      if (C) centerAt(-h + (R + C) * W);
+      for (let k = 1; k < n; k++) if (k !== R && k !== R + C) out.lanes.push(...cutByStations(offsetPoly(pts, -h + k * W), st, inner));
+    } else if (!w.oneWay) {
       for (const piece of cutByStations(pts, st, inner)) out.centers.push(offsetPoly(piece, 0.11), offsetPoly(piece, -0.11));
     } else {
-      for (let k = 1; k < w.lanes; k++) out.lanes.push(...cutByStations(offsetPoly(pts, -h + k * LANE_W), st, inner));
+      for (let k = 1; k < w.lanes; k++) out.lanes.push(...cutByStations(offsetPoly(pts, -h + k * W), st, inner));
     }
   });
   return out;

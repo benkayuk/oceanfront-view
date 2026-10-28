@@ -280,7 +280,7 @@ class AppUpdater(private val context: Context, private val root: RootShell, priv
 
     companion object {
         private const val TAG = "WebHud"
-        const val REPO = "moistpope/oceanfront-view"
+        const val REPO = "benkayuk/oceanfront-view"   // OceanScape's own releases (signed with Ben's key)
         private const val LATEST_URL = "https://api.github.com/repos/$REPO/releases/latest"
         private const val MOVING_MS = 1.0
         private const val ROOT_INSTALL_MS = 120_000L

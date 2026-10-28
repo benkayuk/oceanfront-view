@@ -37,6 +37,7 @@ export class RoadNetwork {
     }
     this.version = -1;
     this.layer = null;
+    this.leftTraffic = false;
     this.visible = true;
   }
 
@@ -48,10 +49,11 @@ export class RoadNetwork {
   }
 
   /** Take the snapshot's layer when a new one came and rebuild. */
-  update(map, show = true) {
+  update(map, show = true, leftTraffic = false) {
     this.group.visible = show && !!this.layer;
     if (!map) return;
-    if (map.roads && map.roads.version !== this.version) { this.layer = map.roads; this.version = map.roads.version; this._rebuild(); }
+    if (map.roads && map.roads.version !== this.version) { this.layer = map.roads; this.version = map.roads.version; this.leftTraffic = leftTraffic; this._rebuild(); }
+    else if (this.layer && leftTraffic !== this.leftTraffic) { this.leftTraffic = leftTraffic; this._rebuild(); }
     this.group.visible = show && !!this.layer;
   }
 
@@ -64,7 +66,7 @@ export class RoadNetwork {
   }
 
   _rebuild() {
-    const net = roadNetwork(this.layer);
+    const net = roadNetwork(this.layer, this.leftTraffic);
     this.meshes.strip.geometry.dispose(); this.meshes.strip.geometry = stripsGeometry(net.strips, STRIP_LIFT);
     this.meshes.edge.geometry.dispose(); this.meshes.edge.geometry = linesGeometry(net.edges, 0.25, NET_LINE_LIFT);
     this.meshes.center.geometry.dispose(); this.meshes.center.geometry = linesGeometry(net.centers, 0.13, NET_LINE_LIFT);

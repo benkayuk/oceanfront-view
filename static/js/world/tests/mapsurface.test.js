@@ -63,7 +63,7 @@ describe('mapReference', () => {
     const four = mapReference(mapOf(pts4, ci4, { lanes: 4, oneWay: false }), { x: 0, y: 0, h: 0 }, roadModel(0), {}, AXLE);
     assert.equal(four.lane, 1);
     assert.ok(Math.abs(four.centerY0 - 1.8) < 1e-9, String(four.centerY0));
-    assert.deepEqual(four.structure.filter(l => l.ego).map(l => [l.d, l.ego]), [[0, 'L1'], [-3.6, 'R1']]);
+    assert.deepEqual(four.structure.filter(l => l.ego).map(l => [l.d, l.ego]).sort((a, b) => b[0] - a[0]), [[0, 'L1'], [-3.6, 'R1']]);
     // far apart (the map 12 m left of the car): still slid, continuously, up to the limit
     const far = mapReference(mapOf(straight(-60, 500, 20, 12)[0], ci), { x: 0, y: 0, h: 0 }, roadModel(0), {}, AXLE);
     assert.ok(Math.abs(far.shift - (1.8 - 12)) < 1e-9, String(far.shift));
