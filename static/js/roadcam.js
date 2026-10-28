@@ -1,13 +1,12 @@
-// The camera view: a window over the 3D view with the comma's road camera and what its own driving screen draws
-// over it (the model's path, lane lines, road edges and the lead), from sunnypilot's webhud /video socket
-// (relayed by the app like /ws). The whole 16:9 picture shows; the window can be dragged up and down.
+// The camera view: a window over the 3D view that mirrors the comma 4's own driving screen, its road camera
+// with everything the screen draws over it (commaui.js), from sunnypilot's webhud /video socket (relayed by the
+// app like /ws). The window has the screen's shape (536 x 240) and can be dragged and resized; a tap shows its
+// controls (close, and which camera: the comma's own choice, or road or wide).
 // The video is H.264 from the comma's livestream encoder, decoded here with WebCodecs; the overlay is drawn
 // here too, onto each frame from the model output computed from that frame (roadcam_geom.js has the maths).
 import { $, iconSvg, setClass, setText } from './util.js';
-import {
-  CAMERAS, LINE_HALF_WIDTH, PATH_HALF_WIDTH, ZOOM, accelColor, avcCodec, fitStream, leadChevron, lineRibbon,
-  modelFor, parseFrame, pathDistance, projector, indexAt,
-} from './roadcam_geom.js';
+import { CAMERAS, MICI, avcCodec, modelFor, parseFrame } from './roadcam_geom.js';
+import { CommaScreen } from './commaui.js';
 
 const MODELS_KEPT = 30;          // 1.5 s of model output, to match frames against
 // A decoded frame waits at most this long for the model output computed from it (it's usually there already).
@@ -18,10 +17,10 @@ const MAX_HELD = 2;              // decoded frames held at once, besides the one
 const MAX_DECODE_QUEUE = 30;     // a decoder this far behind (1.5 s) has stalled: start again at a keyframe
 const MIN_WIDTH = 280;           // px: the smallest the window gets
 const STALL_MS = 4000;           // no frame for this long: say so, and reconnect after three times that
-const PATH_COLORS = {            // bottom to top (model_renderer.py THROTTLE_COLORS / NO_THROTTLE_COLORS)
-  throttle: ['rgba(13,248,122,.4)', 'rgba(114,255,92,.35)', 'rgba(114,255,92,0)'],
-  idle: ['rgba(242,242,242,.4)', 'rgba(242,242,242,.35)', 'rgba(242,242,242,0)'],
-};
+const ASPECT = MICI.width / MICI.height;   // the comma 4's screen
+const MODES = ['auto', 'road', 'wide'];   // auto: whichever camera the comma's screen shows
+const WIDE_CAM_MAX_SPEED = 5, ROAD_CAM_MIN_SPEED = 10;   // m/s: the comma 4 goes wide in experimental mode below these
+const CONTROLS_MS = 4000;        // a tap shows the controls this long
 
 export class RoadCam {
   constructor(app) {
@@ -31,6 +30,10 @@ export class RoadCam {
     this.ctx = this.canvas.getContext('2d', { alpha: false, desynchronized: true });
     this.status = $('#roadcam-status');
     this.camera = 'road';
+    this.mode = 'auto';
+    this.hud = null;
+    this.screen = new CommaScreen();
+    this.lastDrawAt = 0;
     this.isOpen = false;
     this.ws = null;
     this.retry = 0;
@@ -48,7 +51,7 @@ export class RoadCam {
     this.stats = { since: performance.now(), rx: 0, decoded: 0, shown: 0, skipped: 0, gaps: 0, lastId: -1 };
     this.camStats = null;         // the last second's frame rates, while frames come in (perf.js shows them)
     for (const b of this.root.querySelectorAll('[data-roadcam]')) {
-      b.addEventListener('click', (e) => { e.stopPropagation(); this.setCamera(b.dataset.roadcam); });
+      b.addEventListener('click', (e) => { e.stopPropagation(); this.setMode(b.dataset.roadcam); this.showControls(); });
     }
     $('#roadcam-close').innerHTML = iconSvg('close');
     $('#roadcam-close').addEventListener('click', (e) => { e.stopPropagation(); this.close(); });
@@ -58,7 +61,7 @@ export class RoadCam {
 
   /**
    * Where the window sits and how big it is: anywhere from just under the drive card down to just above the dock,
-   * from MIN_WIDTH up to the screen's width (16:9 always). Kept in the settings as fractions of the room it has
+   * from MIN_WIDTH up to the screen's width (the comma 4 screen's shape always). Kept in the settings as fractions of the room it has
    * (roadcamX, roadcamY, roadcamSize) so it lands in the same place after a rotation or a reload.
    */
   bounds() {
@@ -66,7 +69,7 @@ export class RoadCam {
     // under the drive card and the frame-rate chip just below it, above the dock
     const below = ['#drive', 'button.fps'].map(q => $(q)).filter(e => e && e.offsetParent).map(e => e.getBoundingClientRect().bottom);
     const top = Math.max(16, ...below.map(b => b - box.top + 12)), bottom = box.height - 96;
-    const maxW = Math.max(MIN_WIDTH, Math.min(box.width - 32, (bottom - top) * 16 / 9, 1280));
+    const maxW = Math.max(MIN_WIDTH, Math.min(box.width - 32, (bottom - top) * ASPECT, 1600));
     return { left: 16, right: box.width - 16, top, bottom, maxW };
   }
 
@@ -75,7 +78,7 @@ export class RoadCam {
     if (!this.isOpen) return;
     const b = this.bounds(), clamp01 = (v, d) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : d);
     const g = { x: clamp01(geo.x, 0.5), y: clamp01(geo.y, 0), size: clamp01(geo.size, 1) };
-    const w = MIN_WIDTH + g.size * (b.maxW - MIN_WIDTH), h = w * 9 / 16;
+    const w = MIN_WIDTH + g.size * (b.maxW - MIN_WIDTH), h = w / ASPECT;
     const roomX = Math.max(0, b.right - b.left - w), roomY = Math.max(0, b.bottom - b.top - h);
     Object.assign(this.root.style, { width: `${Math.round(w)}px`, left: `${Math.round(b.left + g.x * roomX)}px`, top: `${Math.round(b.top + g.y * roomY)}px` });
     this.geo = g;
@@ -86,7 +89,7 @@ export class RoadCam {
   fit(left, top, w) {
     const b = this.bounds();
     const size = b.maxW > MIN_WIDTH ? (Math.min(b.maxW, Math.max(MIN_WIDTH, w)) - MIN_WIDTH) / (b.maxW - MIN_WIDTH) : 1;
-    const ww = MIN_WIDTH + size * (b.maxW - MIN_WIDTH), h = ww * 9 / 16;
+    const ww = MIN_WIDTH + size * (b.maxW - MIN_WIDTH), h = ww / ASPECT;
     const roomX = b.right - b.left - ww, roomY = b.bottom - b.top - h;
     return {
       size,
@@ -96,25 +99,30 @@ export class RoadCam {
   }
 
   bindDrag() {
-    // drag the window to move it, or its corner handle to resize it (the top-left corner stays put)
+    // drag the window to move it, or its corner handle to resize it (the top-left corner stays put); a tap that
+    // doesn't move shows the controls
     let drag = null;
     this.root.addEventListener('pointerdown', (e) => {
       if (e.target.closest('button')) return;
       drag = { id: e.pointerId, x: e.clientX, y: e.clientY, left: this.root.offsetLeft, top: this.root.offsetTop,
-               w: this.root.offsetWidth, resize: !!e.target.closest('.roadcam-resize') };
+               w: this.root.offsetWidth, resize: !!e.target.closest('.roadcam-resize'), moved: false };
       this.root.setPointerCapture(e.pointerId);
       e.preventDefault();
     });
     this.root.addEventListener('pointermove', (e) => {
       if (!drag || e.pointerId !== drag.id) return;
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+      if (!drag.moved && Math.hypot(dx, dy) < 8) return;
+      drag.moved = true;
       this.place(drag.resize
-        ? this.fit(drag.left, drag.top, drag.w + (Math.abs(dx) > Math.abs(dy * 16 / 9) ? dx : dy * 16 / 9))   // whichever way the corner went further
+        ? this.fit(drag.left, drag.top, drag.w + (Math.abs(dx) > Math.abs(dy * ASPECT) ? dx : dy * ASPECT))   // whichever way the corner went further
         : this.fit(drag.left + dx, drag.top + dy, drag.w));
     });
     const end = (e) => {
       if (!drag || e.pointerId !== drag.id) return;
+      const tapped = !drag.moved && e.type === 'pointerup';
       drag = null;
+      if (tapped) { this.showControls(); return; }
       const r = (v) => Math.round(v * 1000) / 1000;
       this.app.setSetting?.('roadcamGeo', { x: r(this.geo.x), y: r(this.geo.y), size: r(this.geo.size) });
     };
@@ -125,11 +133,13 @@ export class RoadCam {
 
   static get supported() { return typeof window !== 'undefined' && 'VideoDecoder' in window && 'EncodedVideoChunk' in window; }
 
-  open(camera = this.camera) {
-    this.camera = CAMERAS.includes(camera) ? camera : 'road';
+  open(mode = this.mode) {
+    this.mode = MODES.includes(mode) ? mode : 'auto';
+    if (this.mode !== 'auto') this.camera = this.mode;
     this.markCamera();
     if (this.isOpen) { this.send({ type: 'camera', camera: this.camera }); return; }
     this.isOpen = true;
+    this.showControls();
     setClass(this.root, 'hidden', false);
     this.place();   // once it's shown and has a size
     this.markButton();
@@ -152,15 +162,38 @@ export class RoadCam {
     this.resetDecoder();
     if (this.shown) { this.shown.frame.close(); this.shown = null; }
     this.models = [];
+    this.hud = null;
+  }
+
+  /** Auto (the camera the comma's screen shows), or always the road or the wide camera. */
+  setMode(mode) {
+    if (!MODES.includes(mode) || mode === this.mode) return;
+    this.mode = mode;
+    this.app.setSetting?.('roadcam', mode);
+    this.markCamera();
+    this.setCamera(mode === 'auto' ? this.autoCamera() : mode);
+  }
+
+  /** The comma 4's choice (mici augmented_road_view.py): wide in experimental mode at low speed, with hysteresis. */
+  autoCamera() {
+    const h = this.hud;
+    if (!h || !h.experimental) return 'road';
+    if (h.vEgo < WIDE_CAM_MAX_SPEED) return 'wide';
+    if (h.vEgo > ROAD_CAM_MIN_SPEED) return 'road';
+    return this.camera;
   }
 
   setCamera(camera) {
     if (!CAMERAS.includes(camera) || camera === this.camera) return;
     this.camera = camera;
-    this.markCamera();
-    this.app.setSetting?.('roadcam', camera);
     this.resetDecoder();   // its output is tied to the camera it decodes
     this.send({ type: 'camera', camera });
+  }
+
+  showControls() {
+    setClass(this.root, 'controls', true);
+    clearTimeout(this.controlsTimer);
+    this.controlsTimer = setTimeout(() => setClass(this.root, 'controls', false), CONTROLS_MS);
   }
 
   /** The dock's live camera button shows whether the camera view is up. */
@@ -172,7 +205,7 @@ export class RoadCam {
   }
 
   markCamera() {
-    for (const b of this.root.querySelectorAll('[data-roadcam]')) setClass(b, 'on', b.dataset.roadcam === this.camera);
+    for (const b of this.root.querySelectorAll('[data-roadcam]')) setClass(b, 'on', b.dataset.roadcam === this.mode);
   }
 
   say(text) {
@@ -217,6 +250,9 @@ export class RoadCam {
       this.models.push(msg);
       if (this.models.length > MODELS_KEPT) this.models.shift();
       this.dirty = true;
+    } else if (msg.type === 'hud') {
+      this.hud = msg;
+      if (this.mode === 'auto') this.setCamera(this.autoCamera());
     } else if (msg.type === 'calib') {
       this.calib = msg;
       this.dirty = true;
@@ -318,7 +354,8 @@ export class RoadCam {
       this.say(this.error ? `The comma couldn’t start the camera: ${this.error}` : 'Waiting for the comma’s camera…');
       if (now - this.lastFrameAt > 3 * STALL_MS) { this.lastFrameAt = now; this.reconnect(); }
     }
-    if (this.dirty) this.draw();
+    // every frame while there's a picture: the screen's filters animate between the comma's updates
+    if (this.dirty || this.shown) this.draw(now);
     if (now - this.stats.since >= 1000) this.showStats(now);
   }
 
@@ -362,77 +399,24 @@ export class RoadCam {
     return [w, h];
   }
 
-  draw() {
+  draw(now = performance.now()) {
     this.dirty = false;
     const [vw, vh] = this.resize();
     const ctx = this.ctx;
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, vw, vh);
-    if (!this.shown) return;
-    const { frame, frameId, camera } = this.shown;
-    const width = frame.displayWidth, height = frame.displayHeight;
-    const cam = this.calib?.cameras?.[camera];
-    const M = cam?.M && cam.width === width && cam.height === height ? cam.M : null;
-    const fit = fitStream(width, height, vw, vh, M, ZOOM[camera]);
-    ctx.drawImage(frame, fit.tx, fit.ty, width * fit.scale, height * fit.scale);
-    const model = M ? modelFor(this.models, frameId, camera) : null;
-    if (model) this.drawModel(ctx, model, projector(M, fit), vw, vh);
-  }
-
-  drawModel(ctx, m, project, vw, vh) {
-    const fill = (poly, style) => {
-      if (poly.length < 3) return;
-      ctx.beginPath();
-      ctx.moveTo(poly[0][0], poly[0][1]);
-      for (let i = 1; i < poly.length; i++) ctx.lineTo(poly[i][0], poly[i][1]);
-      ctx.closePath();
-      ctx.fillStyle = style;
-      ctx.fill();
-    };
-    const path = m.path || [];
-    if (!path.length) return;
-    const reach = pathDistance(path, null);
-    (m.lanes || []).forEach((line, i) => {
-      const p = m.laneProbs?.[i] ?? 0;
-      fill(lineRibbon(line, LINE_HALF_WIDTH * p, 0, reach, project), `rgba(255,255,255,${Math.min(0.7, Math.max(0, p))})`);
+    const dt = this.lastDrawAt ? (now - this.lastDrawAt) / 1000 : 1 / 60;
+    this.lastDrawAt = now;
+    ctx.setTransform(vw / MICI.width, 0, 0, vh / MICI.height, 0, 0);
+    const shown = this.shown;
+    const cam = shown ? this.calib?.cameras?.[shown.camera] : null;
+    this.screen.draw(ctx, {
+      frame: shown?.frame || null,
+      cam,
+      wide: shown?.camera === 'wide',
+      model: shown && (cam?.Mfull || cam?.M) ? modelFor(this.models, shown.frameId, shown.camera) : null,
+      hud: this.hud,
+      now: now / 1000,
+      dt,
     });
-    (m.edges || []).forEach((line, i) => {
-      const a = Math.min(1, Math.max(0, 1 - (m.edgeStds?.[i] ?? 1)));
-      fill(lineRibbon(line, LINE_HALF_WIDTH, 0, reach, project), `rgba(255,0,0,${a})`);
-    });
-
-    const lead = m.leads?.[0] || null;
-    const ribbon = lineRibbon(path, PATH_HALF_WIDTH, m.pathZ || 0, pathDistance(path, lead), project);
-    if (ribbon.length >= 3) {
-      const ys = ribbon.map(p => p[1]);
-      const bottom = Math.min(vh, Math.max(...ys)), top = Math.max(0, Math.min(...ys));
-      const g = ctx.createLinearGradient(0, bottom, 0, top);
-      if (m.experimental && m.accel?.length) {
-        // colored by the planned acceleration along the path: each point's color where it lands on screen
-        const n = Math.min(Math.floor(ribbon.length / 2), m.accel.length);
-        for (let i = 0; i < n; i += 2) {
-          const y = ribbon[i][1];
-          if (y < 0 || y > vh) continue;
-          const along = 1 - y / vh;
-          g.addColorStop(Math.min(1, Math.max(0, (bottom - y) / Math.max(1, bottom - top))), accelColor(m.accel[i], along));
-        }
-      } else {
-        const colors = m.allowThrottle || !m.longControl ? PATH_COLORS.throttle : PATH_COLORS.idle;
-        colors.forEach((c, i) => g.addColorStop(i / 2, c));
-      }
-      fill(ribbon, g);
-    }
-
-    if (m.longControl) {
-      for (const ld of m.leads || []) {
-        const i = indexAt(path, ld.d);
-        const z = (path[i]?.[2] || 0) + (m.pathZ || 0);
-        const pt = project(ld.d, ld.y, z);
-        if (!pt) continue;
-        const c = leadChevron(ld, pt, vw, vh);
-        fill(c.glow, 'rgb(218,202,37)');
-        fill(c.chevron, `rgba(201,34,49,${c.alpha})`);
-      }
-    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
   }
 }

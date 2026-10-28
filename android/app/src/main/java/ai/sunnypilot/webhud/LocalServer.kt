@@ -437,6 +437,7 @@ class LocalServer(
             "dbc", "txt", "md" -> "text/plain; charset=utf-8"
             "woff2" -> "font/woff2"
             "woff" -> "font/woff"
+            "ttf" -> "font/ttf"
             else -> "application/octet-stream"
         }
 
