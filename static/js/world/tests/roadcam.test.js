@@ -1,12 +1,12 @@
-// The camera view's arithmetic (roadcam_geom.js): frames off the comma's /video socket, the codec string, and the
-// comma 4 screen's framing, projection, colours and torque bar, checked against its own code (fixtures/mici_golden.json
+// The camera view's arithmetic (roadcam_geom.js): frames off the comma's /video socket, the codec string, the plain
+// views' fit and projection, and the comma 4 screen's framing, projection, colours and torque bar, checked against its own code (fixtures/mici_golden.json
 // is from sunnypilot selfdrive/ui/mici/onroad, run in Python).
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  BounceFilter, FRAME_HEADER_BYTES, Filter, arcBarPts, avcCodec, blendColors, interp, lengthIdx, miciFrame, miciPolygon,
-  modelFor, nalUnits, parseFrame, projectRaw,
+  BounceFilter, FRAME_HEADER_BYTES, Filter, accelColor, arcBarPts, avcCodec, blendColors, fitStream, interp, leadChevron,
+  lengthIdx, lineRibbon, miciFrame, miciPolygon, modelFor, nalUnits, parseFrame, pathDistance, projectRaw, projector,
 } from '../../roadcam_geom.js';
 
 const GOLDEN = JSON.parse(readFileSync(new URL('./fixtures/mici_golden.json', import.meta.url)));
@@ -60,6 +60,47 @@ describe('roadcam projection', () => {
     assert.equal(u2, 640);
     assert.ok(v2 > 400);
     assert.equal(projectRaw(M, -5, 0, 0), null);   // behind the camera
+  });
+
+  test('the stream covers the view, centred on the vanishing point as far as it can', () => {
+    const fit = fitStream(1280, 720, 1920, 720, M, 1);
+    assert.equal(fit.scale, 1.5);
+    assert.equal(fit.tx, 0);
+    assert.ok(fit.ty <= 0 && fit.ty >= 720 - 1.5 * 720);
+    const p = projector(M, fit)(1000, 0, 0);
+    assert.ok(Math.abs(p[0] - 960) < 1e-6);
+  });
+
+  test('a line becomes a ribbon out to the draw distance', () => {
+    const line = [[0, 0, 1.2], [10, 0, 1.2], [20, 0, 1.2], [40, 0, 1.2]];
+    const proj = projector(M, { scale: 1, tx: 0, ty: 0 });
+    const poly = lineRibbon(line, 0.5, 0, 15, proj);
+    // 10 and 15 (interpolated) each side; x = 0 is in the camera's own plane and can't be drawn
+    assert.equal(poly.length, 4);
+    assert.ok(poly[0][0] < 640 && poly[3][0] > 640);              // left edge, then the right edge back
+    assert.ok(Math.abs(poly[1][1] - (360 + 1080.79 * 1.2 / 15)) < 1e-6);
+    assert.deepEqual(lineRibbon([], 0.5, 0, 15, proj), []);
+  });
+
+  test('the path stops short of the lead', () => {
+    const path = [[0, 0, 0], [50, 0, 0], [150, 0, 0]];
+    assert.equal(pathDistance(path, null), 100);
+    assert.equal(pathDistance(path, { d: 20 }), 30);               // 2 x 20 - min(14, 10)
+    assert.equal(pathDistance([[0, 0, 0], [5, 0, 0]], null), 10);
+  });
+
+  test('the lead chevron fills as the lead gets close', () => {
+    const far = leadChevron({ d: 60, v: 0 }, [500, 300], 1280, 720);
+    const near = leadChevron({ d: 10, v: -5 }, [500, 300], 1280, 720);
+    assert.equal(far.alpha, 0);
+    assert.equal(near.alpha, 1);
+    assert.equal(near.chevron[1][0], 500);
+  });
+
+  test('experimental colours: green speeding up, red slowing, fading up the path', () => {
+    assert.match(accelColor(2, 0.2), /^hsla\(120,/);
+    assert.match(accelColor(-2, 0.2), /^hsla\(0,/);
+    assert.match(accelColor(0, 0.9), /, 0\.000\)$/);
   });
 
   test('the comma 4 frames its camera the way its own screen does, zooming in with speed', () => {
