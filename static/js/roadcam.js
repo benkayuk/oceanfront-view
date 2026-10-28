@@ -45,7 +45,7 @@ export class RoadCam {
     this.lastFrameAt = 0;
     this.dirty = false;
     this.stats = { since: performance.now(), rx: 0, decoded: 0, shown: 0, skipped: 0, gaps: 0, lastId: -1 };
-    this.statsEl = $('#roadcam-stats');
+    this.camStats = null;         // the last second's frame rates, while frames come in (perf.js shows them)
     for (const b of this.root.querySelectorAll('[data-roadcam]')) {
       b.addEventListener('click', (e) => { e.stopPropagation(); this.setCamera(b.dataset.roadcam); });
     }
@@ -120,6 +120,7 @@ export class RoadCam {
     this.isOpen = false;
     setClass(this.root, 'hidden', true);
     this.markButton();
+    this.camStats = null;
     clearTimeout(this.retryTimer);
     const ws = this.ws;
     this.ws = null;
@@ -301,15 +302,10 @@ export class RoadCam {
     Object.assign(this.stats, { since: performance.now(), rx: 0, decoded: 0, shown: 0, skipped: 0, gaps: 0 });
   }
 
-  /** Frames per second at each step, with the frame-rate counter (Display → FPS): where frames go missing. */
+  /** Frames per second at each step, for the frame-rate chip (perf.js): where frames go missing, if they do. */
   showStats(now) {
-    const st = this.stats, s = (now - st.since) / 1000;
-    const on = this.app.settings?.showFps !== false && st.rx > 0;
-    setClass(this.statsEl, 'hidden', !on);
-    if (on) {
-      const r = (n) => (n / s).toFixed(0);
-      setText(this.statsEl, `${r(st.rx)} in · ${r(st.decoded)} decoded · ${r(st.shown)} shown${st.gaps ? ` · ${r(st.gaps)} lost` : ''}${st.skipped ? ` · ${r(st.skipped)} skipped` : ''}`);
-    }
+    const st = this.stats, secs = (now - st.since) / 1000, r = (n) => Math.round(n / secs);
+    this.camStats = st.rx ? { rx: r(st.rx), decoded: r(st.decoded), shown: r(st.shown), lost: r(st.gaps), skipped: r(st.skipped) } : null;
     this.resetStats();
   }
 

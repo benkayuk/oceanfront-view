@@ -93,10 +93,14 @@ export class FrameMeter {
     const lowfx = document.documentElement.classList.contains('lowfx');
     let text = `${Math.round(s.fps)} fps`;
     if (scale < 1) text += ` · ${Math.round(scale * 100)}%`;
+    // the comma camera's own rate while its window is open (roadcam.js): frames shown per second
+    const cam = this.app.roadcam?.camStats;
+    if (cam) text += ` · cam ${cam.shown} fps`;
     if (this.detail) {
       text += ` · worst ${Math.round(s.worst)} ms · JS ${s.work.toFixed(1)} ms · ${s.calls} draws · ${Math.round(s.tris / 1000)}k tris`;
       if (scale === 1) text += ' · 100%';
       if (lowfx) text += ' · no blur';
+      if (cam) text += ` · cam ${cam.rx} in, ${cam.decoded} decoded${cam.lost ? `, ${cam.lost} lost` : ''}${cam.skipped ? `, ${cam.skipped} skipped` : ''}`;
     }
     setText(this.el, text);
     setClass(this.el, 'low', s.fps < this.hz * SLOW);
