@@ -7,7 +7,7 @@ export const CAMERAS = ['road', 'wide'];
 export const MIN_DRAW_DISTANCE = 10, MAX_DRAW_DISTANCE = 100;
 export const PATH_HALF_WIDTH = 0.9;     // m
 export const LINE_HALF_WIDTH = 0.025;   // m, times the lane line's probability
-export const ZOOM = { road: 1.1, wide: 1.0 };
+export const ZOOM = { road: 1, wide: 1 };   // the window is 16:9 like the stream: the whole picture shows
 
 /** A binary /video message: {key, camera, frameId, tsNs, data}, or null if it isn't a frame. */
 export function parseFrame(buf) {

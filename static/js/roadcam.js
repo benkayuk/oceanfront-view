@@ -1,17 +1,22 @@
-// The camera view: the comma's road camera with what its own driving screen draws over it (the model's path,
-// lane lines, road edges and the lead), from sunnypilot's webhud /video socket (relayed by the app like /ws).
+// The camera view: a window over the 3D view with the comma's road camera and what its own driving screen draws
+// over it (the model's path, lane lines, road edges and the lead), from sunnypilot's webhud /video socket
+// (relayed by the app like /ws). The whole 16:9 picture shows; the window can be dragged up and down.
 // The video is H.264 from the comma's livestream encoder, decoded here with WebCodecs; the overlay is drawn
 // here too, onto each frame from the model output computed from that frame (roadcam_geom.js has the maths).
-import { $, setClass, setText } from './util.js';
+import { $, iconSvg, setClass, setText } from './util.js';
 import {
   CAMERAS, LINE_HALF_WIDTH, PATH_HALF_WIDTH, ZOOM, accelColor, avcCodec, fitStream, leadChevron, lineRibbon,
   modelFor, parseFrame, pathDistance, projector, indexAt,
 } from './roadcam_geom.js';
 
 const MODELS_KEPT = 30;          // 1.5 s of model output, to match frames against
-const MODEL_WAIT_MS = 150;       // a frame waits this long for its model output before it's shown without it
-const STALL_MS = 4000;           // no frame for this long: say so, and reconnect after twice that
-const MAX_DECODE_QUEUE = 4;      // a decoder this far behind skips to the next keyframe
+// A decoded frame waits at most this long for the model output computed from it (it's usually there already).
+// Frames aren't held longer or in numbers: a hardware decoder has only a few output buffers, and one that has
+// handed them all out stops decoding until they come back (the stutter of the first version).
+const MODEL_WAIT_MS = 40;
+const MAX_HELD = 2;              // decoded frames held at once, besides the one on screen
+const MAX_DECODE_QUEUE = 30;     // a decoder this far behind (1.5 s) has stalled: start again at a keyframe
+const STALL_MS = 4000;           // no frame for this long: say so, and reconnect after three times that
 const PATH_COLORS = {            // bottom to top (model_renderer.py THROTTLE_COLORS / NO_THROTTLE_COLORS)
   throttle: ['rgba(13,248,122,.4)', 'rgba(114,255,92,.35)', 'rgba(114,255,92,0)'],
   idle: ['rgba(242,242,242,.4)', 'rgba(242,242,242,.35)', 'rgba(242,242,242,0)'],
@@ -39,9 +44,59 @@ export class RoadCam {
     this.error = null;
     this.lastFrameAt = 0;
     this.dirty = false;
+    this.stats = { since: performance.now(), rx: 0, decoded: 0, shown: 0, skipped: 0, gaps: 0, lastId: -1 };
+    this.statsEl = $('#roadcam-stats');
     for (const b of this.root.querySelectorAll('[data-roadcam]')) {
-      b.addEventListener('click', () => this.setCamera(b.dataset.roadcam));
+      b.addEventListener('click', (e) => { e.stopPropagation(); this.setCamera(b.dataset.roadcam); });
     }
+    $('#roadcam-close').innerHTML = iconSvg('close');
+    $('#roadcam-close').addEventListener('click', (e) => { e.stopPropagation(); this.close(); });
+    this.frac = 0;
+    this.bindDrag();
+  }
+
+  /**
+   * Where the window sits: from just under the drive card down to just above the dock, its top kept in the
+   * settings as a fraction of that room so it lands in the same place after a rotation or a reload.
+   */
+  room() {
+    const box = this.root.offsetParent?.getBoundingClientRect() || { top: 0, height: window.innerHeight };
+    // under the drive card and the frame-rate chip just below it
+    const below = ['#drive', 'button.fps'].map(q => $(q)).filter(e => e && e.offsetParent).map(e => e.getBoundingClientRect().bottom);
+    const min = Math.max(16, ...below.map(b => b - box.top + 12));
+    return [min, Math.max(min, box.height - this.root.offsetHeight - 96)];
+  }
+
+  place(frac = this.app.settings?.roadcamTop) {
+    if (!this.isOpen) return;
+    const f = Number.isFinite(frac) ? Math.min(1, Math.max(0, frac)) : 0;
+    const [min, max] = this.room();
+    this.root.style.top = `${Math.round(min + f * (max - min))}px`;
+    this.frac = f;
+  }
+
+  bindDrag() {
+    let drag = null;
+    this.root.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('button')) return;
+      drag = { id: e.pointerId, y: e.clientY, top: this.root.offsetTop, room: this.room() };
+      this.root.setPointerCapture(e.pointerId);
+    });
+    this.root.addEventListener('pointermove', (e) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      const [min, max] = drag.room;
+      const top = Math.min(max, Math.max(min, drag.top + e.clientY - drag.y));
+      this.root.style.top = `${Math.round(top)}px`;
+      this.frac = max > min ? (top - min) / (max - min) : 0;
+    });
+    const end = (e) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      drag = null;
+      this.app.setSetting?.('roadcamTop', Math.round(this.frac * 1000) / 1000);
+    };
+    this.root.addEventListener('pointerup', end);
+    this.root.addEventListener('pointercancel', end);
+    window.addEventListener('resize', () => this.place(this.frac));
   }
 
   static get supported() { return typeof window !== 'undefined' && 'VideoDecoder' in window && 'EncodedVideoChunk' in window; }
@@ -52,8 +107,9 @@ export class RoadCam {
     if (this.isOpen) { this.send({ type: 'camera', camera: this.camera }); return; }
     this.isOpen = true;
     setClass(this.root, 'hidden', false);
-    document.body.classList.add('roadcam-on');
+    this.place();   // once it's shown and has a size
     this.markButton();
+    this.resetStats();
     if (!RoadCam.supported) { this.say('This screen can’t decode the camera video (no WebCodecs in its WebView).'); return; }
     this.say('Connecting to the comma…');
     this.connect();
@@ -63,7 +119,6 @@ export class RoadCam {
     if (!this.isOpen) return;
     this.isOpen = false;
     setClass(this.root, 'hidden', true);
-    document.body.classList.remove('roadcam-on');
     this.markButton();
     clearTimeout(this.retryTimer);
     const ws = this.ws;
@@ -150,6 +205,10 @@ export class RoadCam {
   onFrame(f) {
     if (!f || f.camera !== this.camera) return;
     this.lastFrameAt = performance.now();
+    const st = this.stats;
+    st.rx++;
+    if (st.lastId >= 0 && f.frameId > st.lastId + 1) st.gaps += f.frameId - st.lastId - 1;   // dropped before they got here
+    st.lastId = f.frameId;
     if (this.needKey && !f.key) return;
     if (f.key && !this.decoder) {
       if (!this.configuring) {
@@ -184,8 +243,9 @@ export class RoadCam {
       const decoder = new VideoDecoder({
         output: (frame) => {
           if (!this.isOpen || camera !== this.camera || decoder !== this.decoder) { frame.close(); return; }
+          this.stats.decoded++;
           this.pending.push({ frame, frameId: frame.timestamp, camera, at: performance.now() });
-          while (this.pending.length > 4) this.pending.shift().frame.close();
+          while (this.pending.length > MAX_HELD) { this.pending.shift().frame.close(); this.stats.skipped++; }
         },
         error: (e) => this.fail(e),
       });
@@ -225,6 +285,7 @@ export class RoadCam {
     if (next) {
       if (this.shown) this.shown.frame.close();
       this.shown = next;
+      this.stats.shown++;
       this.dirty = true;
       if (this.status.textContent) this.say('');
     } else if (this.ws && now - this.lastFrameAt > STALL_MS) {
@@ -233,6 +294,23 @@ export class RoadCam {
       if (now - this.lastFrameAt > 3 * STALL_MS) { this.lastFrameAt = now; this.reconnect(); }
     }
     if (this.dirty) this.draw();
+    if (now - this.stats.since >= 1000) this.showStats(now);
+  }
+
+  resetStats() {
+    Object.assign(this.stats, { since: performance.now(), rx: 0, decoded: 0, shown: 0, skipped: 0, gaps: 0 });
+  }
+
+  /** Frames per second at each step, with the frame-rate counter (Display → FPS): where frames go missing. */
+  showStats(now) {
+    const st = this.stats, s = (now - st.since) / 1000;
+    const on = this.app.settings?.showFps !== false && st.rx > 0;
+    setClass(this.statsEl, 'hidden', !on);
+    if (on) {
+      const r = (n) => (n / s).toFixed(0);
+      setText(this.statsEl, `${r(st.rx)} in · ${r(st.decoded)} decoded · ${r(st.shown)} shown${st.gaps ? ` · ${r(st.gaps)} lost` : ''}${st.skipped ? ` · ${r(st.skipped)} skipped` : ''}`);
+    }
+    this.resetStats();
   }
 
   reconnect() {
@@ -243,20 +321,18 @@ export class RoadCam {
     this.connect();
   }
 
-  /** The newest decoded frame whose model output is here, or that has waited long enough without it. */
+  /**
+   * The next frame to show, in order: one per screen refresh (60 Hz against the stream's 20), so frames that
+   * arrive in a bunch over Wi-Fi are spread out rather than skipped. It waits briefly for its model output.
+   * Frames beyond MAX_HELD were already let go in the decoder's output (a backlog is latency, not smoothness).
+   */
   pick(now) {
-    if (!this.pending.length) return null;
+    const p = this.pending[0];
+    if (!p) return null;
     const latest = this.models.length ? this.models[this.models.length - 1] : null;
     const latestId = latest ? (this.camera === 'wide' ? (latest.frameIdExtra || latest.frameId) : latest.frameId) : -1;
-    let idx = -1;
-    for (let i = this.pending.length - 1; i >= 0; i--) {
-      const p = this.pending[i];
-      if (p.frameId <= latestId || now - p.at > MODEL_WAIT_MS) { idx = i; break; }
-    }
-    if (idx < 0) return null;
-    for (let i = 0; i < idx; i++) this.pending[i].frame.close();
-    const [chosen] = this.pending.splice(0, idx + 1).slice(-1);
-    return chosen;
+    if (p.frameId > latestId && now - p.at < MODEL_WAIT_MS && this.pending.length < MAX_HELD) return null;
+    return this.pending.shift();
   }
 
   resize() {

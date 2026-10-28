@@ -78,7 +78,7 @@ class App {
     this.vehicle = new VehicleState();
     this.ui = new Settings(this);
     this.car = new CarControls(this);   // the car controls mockup (tap the car)
-    this.roadcam = new RoadCam(this);   // the comma's camera with its overlay, instead of the 3D view
+    this.roadcam = new RoadCam(this);   // the comma's camera with its overlay, in a window over the 3D view
     this.applyTheme();
     this.scene.setEgoLook(this.settings.egoPaint, this.settings.egoWheels);
     this.setView(this.settings.view, true);
@@ -121,8 +121,7 @@ class App {
       const state = mock ? mock.state : this.liveState(), settings = mock ? mock.settings : this.settings;
       try { this.vehicle.update(state, mock ? 0 : now - this.lastStateAt, dt); } catch (e) { this.reportError(e); }
       try { if (mock) this.scene.update(state, settings); } catch (e) { this.reportError(e); }
-      // the 3D view rests while the camera view covers it
-      try { if (!this.roadcam.isOpen) this.scene.frame(dt, this.vehicle); } catch (e) { this.reportError(e); }
+      try { this.scene.frame(dt, this.vehicle); } catch (e) { this.reportError(e); }
       try { this.roadcam.frame(); } catch (e) { this.reportError(e); }
       try { this.car.frame(dt); } catch (e) { this.reportError(e); }
       try { if (state) this.hud.update(state, settings, this.vehicle); } catch (e) { this.reportError(e); }
@@ -441,7 +440,6 @@ class App {
       this.parkingStop = true;
       if (performance.now() - this.manualViewAt > AUTO_VIEW_HOLD_MS) {
         this.autoViewActive = true;
-        this.roadcam.close();   // parking: the top view over the camera
         this.scene.setView('top');
         this.markView('top');
       }
@@ -465,7 +463,7 @@ class App {
       cam.setAttribute('aria-expanded', String(on));
     };
     cam.addEventListener('click', () => showMenu(menu.classList.contains('hidden')));
-    // the comma's live camera (roadcam.js) over the 3D view, on and off; the 3D view keeps its angle
+    // the comma's live camera (roadcam.js) in a window over the 3D view, on and off
     const live = $('#btn-roadcam');
     live.innerHTML = iconSvg('video');
     live.addEventListener('click', () => {
@@ -476,7 +474,6 @@ class App {
     document.addEventListener('pointerdown', (e) => { if (!$('#viewdock').contains(e.target)) showMenu(false); });
     $$('#viewmenu button[data-view]').forEach(b => b.addEventListener('click', () => {
       showMenu(false);
-      this.roadcam.close();   // an angle is for the 3D view
       this.autoViewActive = false;
       this.manualViewAt = performance.now();
       this.setSetting('view', b.dataset.view);
