@@ -284,6 +284,9 @@ export class Settings {
     body.append(el('div.section', el('h3', 'Camera speed-sign units'),
       el('p.desc', 'Units of the number read from signs, before display conversion. Choose mph for UK signs if Follow car converts them incorrectly.'),
       this.app.segmented([['auto', 'Follow car'], ['mph', 'mph'], ['kmh', 'km/h']], s.cameraSignUnits || 'auto', v => set('cameraSignUnits', v))));
+    body.append(el('div.section', el('h3', 'Speed-sign style'),
+      el('p.desc', 'The speed limit sign drawn on the HUD and by the road. Follow units uses the US sign for mph, except with left-hand (UK) traffic.'),
+      this.app.segmented([['auto', 'Follow units'], ['round', 'Round (UK/EU)'], ['us', 'US']], s.signStyle || 'auto', v => set('signStyle', v))));
     const paint = oceanPaint(s.egoPaint);
     body.append(el('div.section', el('h3', 'Paint', el('small', `${paint.name} · ${paint.finish.toLowerCase()}`)),
       el('div.swatches', OCEAN_PAINTS.map(p => el('button.swatch' + (p === paint ? '.on' : ''),
