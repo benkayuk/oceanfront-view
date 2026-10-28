@@ -16,6 +16,7 @@ const MODELS_KEPT = 30;          // 1.5 s of model output, to match frames again
 const MODEL_WAIT_MS = 40;
 const MAX_HELD = 2;              // decoded frames held at once, besides the one on screen
 const MAX_DECODE_QUEUE = 30;     // a decoder this far behind (1.5 s) has stalled: start again at a keyframe
+const MIN_WIDTH = 280;           // px: the smallest the window gets
 const STALL_MS = 4000;           // no frame for this long: say so, and reconnect after three times that
 const PATH_COLORS = {            // bottom to top (model_renderer.py THROTTLE_COLORS / NO_THROTTLE_COLORS)
   throttle: ['rgba(13,248,122,.4)', 'rgba(114,255,92,.35)', 'rgba(114,255,92,0)'],
@@ -51,52 +52,75 @@ export class RoadCam {
     }
     $('#roadcam-close').innerHTML = iconSvg('close');
     $('#roadcam-close').addEventListener('click', (e) => { e.stopPropagation(); this.close(); });
-    this.frac = 0;
+    this.geo = { ...(app.settings?.roadcamGeo || {}) };
     this.bindDrag();
   }
 
   /**
-   * Where the window sits: from just under the drive card down to just above the dock, its top kept in the
-   * settings as a fraction of that room so it lands in the same place after a rotation or a reload.
+   * Where the window sits and how big it is: anywhere from just under the drive card down to just above the dock,
+   * from MIN_WIDTH up to the screen's width (16:9 always). Kept in the settings as fractions of the room it has
+   * (roadcamX, roadcamY, roadcamSize) so it lands in the same place after a rotation or a reload.
    */
-  room() {
-    const box = this.root.offsetParent?.getBoundingClientRect() || { top: 0, height: window.innerHeight };
-    // under the drive card and the frame-rate chip just below it
+  bounds() {
+    const box = this.root.offsetParent?.getBoundingClientRect() || { top: 0, width: window.innerWidth, height: window.innerHeight };
+    // under the drive card and the frame-rate chip just below it, above the dock
     const below = ['#drive', 'button.fps'].map(q => $(q)).filter(e => e && e.offsetParent).map(e => e.getBoundingClientRect().bottom);
-    const min = Math.max(16, ...below.map(b => b - box.top + 12));
-    return [min, Math.max(min, box.height - this.root.offsetHeight - 96)];
+    const top = Math.max(16, ...below.map(b => b - box.top + 12)), bottom = box.height - 96;
+    const maxW = Math.max(MIN_WIDTH, Math.min(box.width - 32, (bottom - top) * 16 / 9, 1280));
+    return { left: 16, right: box.width - 16, top, bottom, maxW };
   }
 
-  place(frac = this.app.settings?.roadcamTop) {
+  /** Lays the window out from the fractions: size first, then the place within the room that size leaves. */
+  place(geo = this.geo) {
     if (!this.isOpen) return;
-    const f = Number.isFinite(frac) ? Math.min(1, Math.max(0, frac)) : 0;
-    const [min, max] = this.room();
-    this.root.style.top = `${Math.round(min + f * (max - min))}px`;
-    this.frac = f;
+    const b = this.bounds(), clamp01 = (v, d) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : d);
+    const g = { x: clamp01(geo.x, 0.5), y: clamp01(geo.y, 0), size: clamp01(geo.size, 1) };
+    const w = MIN_WIDTH + g.size * (b.maxW - MIN_WIDTH), h = w * 9 / 16;
+    const roomX = Math.max(0, b.right - b.left - w), roomY = Math.max(0, b.bottom - b.top - h);
+    Object.assign(this.root.style, { width: `${Math.round(w)}px`, left: `${Math.round(b.left + g.x * roomX)}px`, top: `${Math.round(b.top + g.y * roomY)}px` });
+    this.geo = g;
+    this.dirty = true;
+  }
+
+  /** The fractions for a window at (left, top) and `w` wide, kept inside the room. */
+  fit(left, top, w) {
+    const b = this.bounds();
+    const size = b.maxW > MIN_WIDTH ? (Math.min(b.maxW, Math.max(MIN_WIDTH, w)) - MIN_WIDTH) / (b.maxW - MIN_WIDTH) : 1;
+    const ww = MIN_WIDTH + size * (b.maxW - MIN_WIDTH), h = ww * 9 / 16;
+    const roomX = b.right - b.left - ww, roomY = b.bottom - b.top - h;
+    return {
+      size,
+      x: roomX > 0 ? Math.min(1, Math.max(0, (left - b.left) / roomX)) : 0.5,
+      y: roomY > 0 ? Math.min(1, Math.max(0, (top - b.top) / roomY)) : 0,
+    };
   }
 
   bindDrag() {
+    // drag the window to move it, or its corner handle to resize it (the top-left corner stays put)
     let drag = null;
     this.root.addEventListener('pointerdown', (e) => {
       if (e.target.closest('button')) return;
-      drag = { id: e.pointerId, y: e.clientY, top: this.root.offsetTop, room: this.room() };
+      drag = { id: e.pointerId, x: e.clientX, y: e.clientY, left: this.root.offsetLeft, top: this.root.offsetTop,
+               w: this.root.offsetWidth, resize: !!e.target.closest('.roadcam-resize') };
       this.root.setPointerCapture(e.pointerId);
+      e.preventDefault();
     });
     this.root.addEventListener('pointermove', (e) => {
       if (!drag || e.pointerId !== drag.id) return;
-      const [min, max] = drag.room;
-      const top = Math.min(max, Math.max(min, drag.top + e.clientY - drag.y));
-      this.root.style.top = `${Math.round(top)}px`;
-      this.frac = max > min ? (top - min) / (max - min) : 0;
+      const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+      this.place(drag.resize
+        ? this.fit(drag.left, drag.top, drag.w + (Math.abs(dx) > Math.abs(dy * 16 / 9) ? dx : dy * 16 / 9))   // whichever way the corner went further
+        : this.fit(drag.left + dx, drag.top + dy, drag.w));
     });
     const end = (e) => {
       if (!drag || e.pointerId !== drag.id) return;
       drag = null;
-      this.app.setSetting?.('roadcamTop', Math.round(this.frac * 1000) / 1000);
+      const r = (v) => Math.round(v * 1000) / 1000;
+      this.app.setSetting?.('roadcamGeo', { x: r(this.geo.x), y: r(this.geo.y), size: r(this.geo.size) });
     };
     this.root.addEventListener('pointerup', end);
     this.root.addEventListener('pointercancel', end);
-    window.addEventListener('resize', () => this.place(this.frac));
+    window.addEventListener('resize', () => this.place());
   }
 
   static get supported() { return typeof window !== 'undefined' && 'VideoDecoder' in window && 'EncodedVideoChunk' in window; }

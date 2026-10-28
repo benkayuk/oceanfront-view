@@ -30,11 +30,12 @@
 <div id="app">
   <canvas id="scene"></canvas>
   <div id="olabels" aria-hidden="true"></div>
-  <!-- the comma's camera with its overlay (roadcam.js): a window over the 3D view, dragged up and down -->
+  <!-- the comma's camera with its overlay (roadcam.js): a window over the 3D view, moved and resized by dragging -->
   <div id="roadcam" class="roadcam hidden">
     <canvas id="roadcam-canvas"></canvas>
     <div id="roadcam-status" class="roadcam-status hidden" aria-live="polite"></div>
     <button id="roadcam-close" class="roadcam-close" aria-label="Close the camera"></button>
+    <div class="roadcam-resize" title="Drag to resize" aria-hidden="true"></div>
     <div class="roadcam-cams" role="radiogroup" aria-label="Camera">
       <button data-roadcam="road" class="on" role="radio">Road</button>
       <button data-roadcam="wide" role="radio">Wide</button>
