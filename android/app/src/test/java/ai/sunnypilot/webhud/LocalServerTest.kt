@@ -137,6 +137,7 @@ class LocalServerTest {
         assertEquals("text/javascript; charset=utf-8", LocalServer.contentType("js/world/worker.js"))
         assertEquals("model/gltf-binary", LocalServer.contentType("models/pulse_ocean_v0.10_parts.glb"))
         assertEquals("text/plain; charset=utf-8", LocalServer.contentType("dbc/fisker_ocean_mrr.dbc"))
+        assertEquals("font/ttf", LocalServer.contentType("comma/Inter-Bold.ttf"))
         assertEquals("application/octet-stream", LocalServer.contentType("noext"))
     }
 }
