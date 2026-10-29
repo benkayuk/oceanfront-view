@@ -359,27 +359,6 @@ export class CommaPanel {
 
     c.append(this.updateSection(g));
 
-    // the ways round the Update button: openpilot's own updater, and git's two steps on their own
-    c.append(el('details.section', el('summary', el('h3', { style: { display: 'inline' } }, 'Advanced')),
-      el('h4', 'openpilot\'s updater'),
-      el('p.desc', 'comma\'s own updater, which runs by itself while the car is off: it checks the branch it follows, downloads an update in the ' +
-        'background and installs it the next time the comma starts. Update above does the same at once.'),
-      el('div.kv',
-        el('span', 'State'), el('span', p.UpdaterState || '—'),
-        el('span', 'Follows'), el('span', p.UpdaterTargetBranch || g.branch || '—'),
-        el('span', 'Update'), el('span', p.UpdateAvailable === '1' ? `ready: ${p.UpdaterNewDescription || ''}` : p.UpdaterFetchAvailable === '1' ? 'available to download' : 'none known'),
-        el('span', 'Last check'), el('span', p.LastUpdateTime || '—')),
-      el('div.btns',
-        this.jobButton('Check', 'update_check'),
-        this.jobButton('Download', 'update_download'),
-        p.UpdateAvailable === '1' ? this.jobButton('Reboot to install', 'reboot', {}, 'Reboot the comma to install the update?', false, '.primary') : null),
-      el('h4', 'Git'),
-      el('p.desc', 'Update\'s two steps on their own: Fetch only looks for new commits (nothing on the comma changes); Pull brings them in ' +
-        '(fast-forward only, with its submodules).'),
-      restartBox('pullRestart', 'Restart openpilot after pulling'),
-      el('div.btns', this.jobButton('Fetch', 'fetch'),
-        this.jobButton('Pull', 'pull', () => ({ restart: this.pullRestart.checked }), 'Pull the latest of this branch into the comma\'s install?'))));
-
     const branchIn = el('input.cm-field', { placeholder: 'Branch name', value: this.branchDraft || '', oninput: e => { this.branchDraft = e.target.value; }, list: 'cm-branches' });
     const datalist = el('datalist', { id: 'cm-branches' }, (this.branches || []).map(b => el('option', { value: b })));
     c.append(el('div.section', el('h3', 'Branch'),
@@ -414,6 +393,27 @@ export class CommaPanel {
           () => `Install ${urlIn.value.trim()} (${forkBranch.value.trim()}) on the comma? openpilot stops while it swaps, and the current install becomes the backup.`, false, '.primary'),
         g.backup ? this.jobButton('Restore the backup', 'restore', () => ({ restart: this.forkReboot.checked }),
           `Swap the backup (${g.backup}) back in? The current install becomes the backup.`) : null)));
+
+    // the ways round the Update button: openpilot's own updater, and git's two steps on their own
+    c.append(el('details.section', el('summary', el('h3', { style: { display: 'inline' } }, 'Advanced')),
+      el('h4', 'openpilot\'s updater'),
+      el('p.desc', 'comma\'s own updater, which runs by itself while the car is off: it checks the branch it follows, downloads an update in the ' +
+        'background and installs it the next time the comma starts. Update above does the same at once.'),
+      el('div.kv',
+        el('span', 'State'), el('span', p.UpdaterState || '—'),
+        el('span', 'Follows'), el('span', p.UpdaterTargetBranch || g.branch || '—'),
+        el('span', 'Update'), el('span', p.UpdateAvailable === '1' ? `ready: ${p.UpdaterNewDescription || ''}` : p.UpdaterFetchAvailable === '1' ? 'available to download' : 'none known'),
+        el('span', 'Last check'), el('span', p.LastUpdateTime || '—')),
+      el('div.btns',
+        this.jobButton('Check', 'update_check'),
+        this.jobButton('Download', 'update_download'),
+        p.UpdateAvailable === '1' ? this.jobButton('Reboot to install', 'reboot', {}, 'Reboot the comma to install the update?', false, '.primary') : null),
+      el('h4', 'Git'),
+      el('p.desc', 'Update\'s two steps on their own: Fetch only looks for new commits (nothing on the comma changes); Pull brings them in ' +
+        '(fast-forward only, with its submodules).'),
+      restartBox('pullRestart', 'Restart openpilot after pulling'),
+      el('div.btns', this.jobButton('Fetch', 'fetch'),
+        this.jobButton('Pull', 'pull', () => ({ restart: this.pullRestart.checked }), 'Pull the latest of this branch into the comma\'s install?'))));
 
     c.append(el('div.section', el('h3', 'Panda'),
       el('p.desc', 'The panda\'s firmware from this install (panda/board). openpilot flashes it by itself when it starts with a different one; ' +
@@ -463,7 +463,10 @@ export class CommaPanel {
     }
     const again = this.button('Check again', async () => { this.preview = await this.call('GET', '/preview'); this.preview.at = Date.now(); }, { key: 'preview' });
     const cancel = el('button.btn', { onclick: () => { this.preview = null; this.rerender(); } }, pv.behind ? 'Cancel' : 'Close');
-    if (pv.error) { sec.append(el('p.desc', pv.error), el('div.btns', again, cancel)); return sec; }
+    if (pv.error || !pv.upstream || !Number.isFinite(pv.behind)) {
+      sec.append(el('p.desc', pv.error || 'The comma\'s answer didn\'t say what\'s new. Try again.'), el('div.btns', again, cancel));
+      return sec;
+    }
     if (!pv.behind) {
       sec.append(el('p.desc', `Up to date with ${pv.upstream}` + (pv.ahead ? `, and ${pv.ahead} commit${pv.ahead > 1 ? 's' : ''} ahead of it (local ones)` : '') + '.'),
         el('div.btns', again, cancel));

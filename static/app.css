@@ -231,7 +231,7 @@ input[type=range]::-moz-range-thumb { width: 20px; height: 20px; border: 0; bord
 .sheet header { display: flex; align-items: center; gap: 8px; padding: 10px 10px 0 14px; border-bottom: 1px solid var(--line); }
 .sheet nav { display: flex; gap: 2px; overflow-x: auto; flex: 1; scrollbar-width: none; }
 .sheet nav::-webkit-scrollbar { display: none; }
-.sheet nav button { border: 0; background: transparent; color: var(--muted); font-weight: 600; font-size: 14px; padding: 12px 12px 13px; border-bottom: 3px solid transparent; white-space: nowrap; }
+.sheet nav button { border: 0; background: transparent; color: var(--muted); font-weight: 600; font-size: 14px; padding: 12px 10px 13px; flex-shrink: 0; border-bottom: 3px solid transparent; white-space: nowrap; }
 .sheet nav button.on { color: var(--text); border-bottom-color: var(--accent); }
 .sheet .close { height: 44px; border: 0; background: transparent; border-radius: 10px; }
 .tab-body { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 16px 18px 40px; -webkit-overflow-scrolling: touch; user-select: text; -webkit-user-select: text; }

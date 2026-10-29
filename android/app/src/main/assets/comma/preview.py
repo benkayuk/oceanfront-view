@@ -9,8 +9,11 @@ import subprocess
 OP = "/data/openpilot"
 
 
-def sh(*cmd, timeout=10):
-  r = subprocess.run(cmd, cwd=OP, capture_output=True, text=True, timeout=timeout)
+def sh(*cmd, timeout=30):
+  try:
+    r = subprocess.run(cmd, cwd=OP, capture_output=True, text=True, timeout=timeout)
+  except subprocess.TimeoutExpired:
+    return -1, "", f"{cmd[1] if len(cmd) > 1 else cmd[0]} took longer than {timeout} s"
   return r.returncode, r.stdout.strip(), r.stderr.strip()
 
 
