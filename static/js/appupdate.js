@@ -109,7 +109,7 @@ export class AppUpdate {
       ? (label, val, sub) => [el('span', label), el('span', val || '', sub ? el('small', ` · ${sub}`) : null)]
       : (label, val, sub, cls) => el('div.fo-row', el('div.fo-row__lbl', el('b', label), sub ? el(`small.fo-row__sub${cls ? '.' + cls : ''}`, sub) : null), val ? el('span.fo-row__val', val) : null);
     const rows = (...r) => (plain ? el('div.kv', r.flat()) : el('div.fo-rows', r));
-    const note = (text, bad = false) => (plain ? el(bad ? 'div.banner' : 'p.desc', { style: { whiteSpace: 'pre-line' } }, text) : el(bad ? 'p.fo-note.bad' : 'p.fo-note', { style: { whiteSpace: 'pre-line' } }, text));
+    const note = (text, bad = false) => (plain ? el(bad ? 'div.banner' : 'p.desc', { style: { whiteSpace: 'pre-line', marginTop: '10px' } }, text) : el(bad ? 'p.fo-note.bad' : 'p.fo-note', { style: { whiteSpace: 'pre-line' } }, text));
     const kids = [];
     if (!st) {
       kids.push(rows(row('Version', '…')));
