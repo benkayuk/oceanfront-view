@@ -2,11 +2,12 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { parseWidth, parseTurns, wayDetail, laneLayout } from '../roaddetail.js';
+import { parseWidth, parseTurns, wayDetail, laneLayout, overtaking } from '../roaddetail.js';
 import { MapData, keyOf } from '../mapdata.js';
 import { decodeTile, tileFor } from '../osmtile.js';
 import { FIXTURE } from './osmtile.test.js';
-import { mapReference, roadNetwork, laneCenters } from '../../mapsurface.js';
+import { mapReference, roadNetwork, laneCenters, ukCenter } from '../../mapsurface.js';
+import { mergeCopies } from '../state.js';
 
 describe('parsing', () => {
   test('widths in meters and feet; nonsense is null', () => {
@@ -25,7 +26,7 @@ describe('parsing', () => {
   });
 
   test('lanes each way: told, by difference, from the arrows', () => {
-    assert.deepEqual(wayDetail({ lanes: '3', 'lanes:forward': '2', width: '10' }), { width: 10, lanes: 3, fwd: 2, bwd: 1, both: 0, turnsFwd: null, turnsBwd: null, roundabout: false });
+    assert.deepEqual(wayDetail({ lanes: '3', 'lanes:forward': '2', width: '10' }), { width: 10, lanes: 3, fwd: 2, bwd: 1, both: 0, turnsFwd: null, turnsBwd: null, roundabout: false, passFwd: null, passBwd: null });
     const d = wayDetail({ 'turn:lanes:backward': 'left|through', 'lanes:forward': '1' });
     assert.equal(d.bwd, 2); assert.equal(d.fwd, 1); assert.deepEqual(d.turnsBwd, [['left'], ['through']]);
     const one = wayDetail({ 'turn:lanes': 'through|through;right', junction: 'roundabout' }, true);
@@ -93,10 +94,32 @@ describe('the map', () => {
     const l = road(true);
     assert.deepEqual(ys(l.centers), [-1.91, -1.69]);
     assert.deepEqual(ys(l.lanes), [1.8]);
-    // the UK's center is one white line, not a double yellow one
+    // the UK's center is white, not a double yellow line: with two lanes our way and one theirs, a double line, solid on
+    // our side (we may not cross into the oncoming lane) and dashed on theirs
     const uk = road(true, false);
     assert.equal(uk.centerStyle, 'single');
-    assert.deepEqual(ys(uk.centers), [-1.8]);
+    assert.deepEqual(ys(uk.solids), [-1.66]);
+    assert.deepEqual(ys(uk.centers), [-1.94]);
+  });
+
+  test('UK center lines: dashed by default, solid where OSM or the lanes say no overtaking', () => {
+    const road = (extra) => roadNetwork({ ways: [{ id: 1, lanes: 2, oneWay: false, width: 7.2, pts: [[0, 0], [100, 0]], ...extra }] }, true, false);
+    const ys = (lines) => lines.map(l => +l[0][1].toFixed(2)).sort((a, b) => a - b);
+    const plain = road({});
+    assert.deepEqual([ys(plain.centers), plain.solids.length], [[0], 0]);
+    const no = road({ passFwd: false, passBwd: false });
+    assert.deepEqual([no.centers.length, ys(no.solids)], [0, [-0.14, 0.14]]);
+    // only the way's forward traffic may not cross: driving on the left that side is the left one
+    const fwdNo = road({ passFwd: false, passBwd: true });
+    assert.deepEqual([ys(fwdNo.solids), ys(fwdNo.centers)], [[0.14], [-0.14]]);
+    // two lanes each way with no reservation: a solid double line
+    const four = road({ lanes: 4, width: 14.4, fwd: 2, bwd: 2, centre: 0, detailed: true });
+    assert.deepEqual([four.centers.length, four.solids.length], [0, 2]);
+    // the tags win over the lanes
+    assert.deepEqual(ukCenter({ detailed: true, fwd: 2, bwd: 1, passFwd: true, passBwd: true }), { fwd: true, bwd: true });
+    assert.deepEqual(overtaking({ overtaking: 'backward' }), { fwd: false, bwd: true });
+    assert.deepEqual(overtaking({ divider: 'double_solid_line' }), { fwd: false, bwd: false });
+    assert.deepEqual(overtaking({ overtaking: 'yes', 'overtaking:forward': 'no' }), { fwd: false, bwd: true });
   });
 
   test('turn arrows: one per lane and turn, near the junction at the way\'s end, pointing the way the lane goes', () => {
@@ -137,5 +160,20 @@ describe('the map', () => {
       assert.equal(near.length, 2, String(side));
       assert.ok(Math.hypot(near[0][0] - near[1][0], near[0][1] - near[1][1]) < 0.1, JSON.stringify(near));
     }
+  });
+
+  test('a way crossing a tile boundary comes from both tiles: the copies become one, and never cut each other\'s edges', () => {
+    const line = (a, b) => { const p = []; for (let x = a; x <= b; x += 10) p.push([x, x * 0.1]); return p; };
+    const ways = [{ id: 7, pts: line(0, 300) }, { id: 8, pts: [[0, 50], [10, 50]] }, { id: 7, pts: line(200, 500) }, { id: 7, pts: line(0, 300) }];
+    mergeCopies(ways);
+    assert.deepEqual(ways.map(w => w.id), [7, 8]);
+    assert.deepEqual([ways[0].pts[0], ways[0].pts[ways[0].pts.length - 1], ways[0].pts.length], [[0, 0], [500, 50], 51]);
+    // unmerged copies (no shared run) don't open junctions on each other
+    const net = roadNetwork({ ways: [
+      { id: 7, lanes: 2, oneWay: false, width: 7.2, pts: [[0, 0], [100, 0], [200, 0]] },
+      { id: 7, lanes: 2, oneWay: false, width: 7.2, pts: [[50, 6], [100, 0], [150, 6]] },
+    ] }, true, false);
+    const len = (l) => l.slice(1).reduce((a, p, i) => a + Math.hypot(p[0] - l[i][0], p[1] - l[i][1]), 0);
+    assert.ok(net.edges.reduce((a, e) => a + len(e), 0) > 2 * 200 * 0.95, 'the first copy\'s edges run unbroken');
   });
 });

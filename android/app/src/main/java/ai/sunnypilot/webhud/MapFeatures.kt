@@ -21,7 +21,7 @@ import kotlin.math.floor
  *
  * The same goes for the roads' full detail the tiles leave out (static/js/world/roaddetail.js): the lanes each way,
  * turn arrows, widths, roundabouts -- the tags of every road way in a road tile that has any of them, one Overpass
- * request per tile, kept as `ways_<tlat>_<tlon>.json` `{tile, at, ways: {<osm id>: {tag: value}}}` and served whole
+ * request per tile, kept as `ways2_<tlat>_<tlon>.json` `{tile, at, ways: {<osm id>: {tag: value}}}` and served whole
  * (`/map/ways/<tlat>/<tlon>`).
  */
 class MapFeatures(private val root: File) {
@@ -53,7 +53,7 @@ class MapFeatures(private val root: File) {
 
     fun haveWays(tlat: Int, tlon: Int): Boolean = waysFile(tlat, tlon).isFile
 
-    private fun waysFile(tlat: Int, tlon: Int) = File(root, "ways_${tlat}_$tlon.json")
+    private fun waysFile(tlat: Int, tlon: Int) = File(root, "ways2_${tlat}_$tlon.json")   // 2: with the overtaking tags
 
     /** Fetch the road tile's way detail unless already on disk. True when it is. */
     fun ensureWays(tlat: Int, tlon: Int): Boolean = ensure("ways $tlat/$tlon", { haveWays(tlat, tlon) }) { fetchWays(tlat, tlon) }
@@ -205,10 +205,11 @@ class MapFeatures(private val root: File) {
 out body;"""
         /** The road ways with any lane, width or junction detail (roaddetail.js WAY_TAGS), tags only. */
         private val WAYS_QUERY = """[out:json][timeout:120];
-way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|service)(_link)?$"][~"^(lanes|width|est_width|turn:lanes|junction)"~"."]({bbox});
+way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|service)(_link)?$"][~"^(lanes|width|est_width|turn:lanes|junction|overtaking|divider)"~"."]({bbox});
 out tags;"""
         private val WAY_TAGS = listOf("width", "est_width", "lanes", "lanes:forward", "lanes:backward", "lanes:both_ways", "turn:lanes",
-            "turn:lanes:forward", "turn:lanes:backward", "junction")
+            "turn:lanes:forward", "turn:lanes:backward", "junction",
+            "overtaking", "overtaking:forward", "overtaking:backward", "divider")
 
         /** `/map/features/<klat>/<klon>` -> (klat, klon), or null. */
         fun parsePath(path: String): Pair<Int, Int>? {

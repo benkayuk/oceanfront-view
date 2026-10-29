@@ -29,9 +29,28 @@ export function parseTurns(v) {
   });
 }
 
+/** Whether traffic each way may overtake across the center line, from overtaking / overtaking:forward|backward
+ *  and divider: { fwd, bwd }, each true, false or null (OSM doesn't say). */
+export function overtaking(tags) {
+  const yn = (v) => (v === 'yes' ? true : v === 'no' ? false : null);
+  let fwd = null, bwd = null;
+  const o = tags.overtaking;
+  if (o === 'yes' || o === 'no' || o === 'both') fwd = bwd = o !== 'no';
+  else if (o === 'forward') { fwd = true; bwd = false; }
+  else if (o === 'backward') { fwd = false; bwd = true; }
+  const dv = tags.divider;
+  if (fwd == null && bwd == null && dv) {
+    if (/^(solid_line|double_solid_line|barrier|kerb)$/.test(dv)) fwd = bwd = false;
+    else if (/^(dashed_line|no)$/.test(dv)) fwd = bwd = true;
+  }
+  fwd = yn(tags['overtaking:forward']) ?? fwd;
+  bwd = yn(tags['overtaking:backward']) ?? bwd;
+  return { fwd, bwd };
+}
+
 const count = (v) => { const n = parseInt(v, 10); return Number.isFinite(n) && n >= 0 && n <= 12 ? n : null; };
 
-/** The parsed detail of a way from its tags: { width, fwd, bwd, both, turnsFwd, turnsBwd, roundabout } (null fields
+/** The parsed detail of a way from its tags: { width, fwd, bwd, both, turnsFwd, turnsBwd, roundabout, passFwd, passBwd } (null fields
  *  where OSM doesn't say). `oneWay` is the tile's flag (the tags' oneway is already folded into it). */
 export function wayDetail(tags, oneWay = false) {
   if (!tags) return null;
@@ -53,7 +72,9 @@ export function wayDetail(tags, oneWay = false) {
   }
   if (turnsFwd && fwd != null && turnsFwd.length !== fwd) turnsFwd = null;   // they disagree: trust neither arrow
   if (turnsBwd && bwd != null && turnsBwd.length !== bwd) turnsBwd = null;
-  return { width, lanes, fwd, bwd, both, turnsFwd, turnsBwd, roundabout: tags.junction === 'roundabout' || tags.junction === 'circular' };
+  const pass = overtaking(tags);
+  return { width, lanes, fwd, bwd, both, turnsFwd, turnsBwd, roundabout: tags.junction === 'roundabout' || tags.junction === 'circular',
+    passFwd: pass.fwd, passBwd: pass.bwd };
 }
 
 /** A way's lane count when OSM doesn't say: two for a two-way road, two for a one-way road of a kind that is usually a
@@ -94,4 +115,4 @@ export function laneLayout(way, dir = 1, laneW = LANE_W) {
 
 /** The tags worth keeping from an Overpass way (the server keeps exactly these too). */
 export const WAY_TAGS = ['width', 'est_width', 'lanes', 'lanes:forward', 'lanes:backward', 'lanes:both_ways', 'turn:lanes',
-  'turn:lanes:forward', 'turn:lanes:backward', 'junction'];
+  'turn:lanes:forward', 'turn:lanes:backward', 'junction', 'overtaking', 'overtaking:forward', 'overtaking:backward', 'divider'];
