@@ -111,8 +111,14 @@ describe('the map', () => {
     // our two lanes lie between the right edge (-5.4) and the center line (1.8): centers 0 and -3.6; the left arrow bends
     // left of its lane, never past the center line by more than its head
     assert.ok(ys.every(y => y < 3 && y > -5.4), String([Math.min(...ys), Math.max(...ys)]));
-    const tails = net.arrows.filter(t => t.some(p => Math.abs(p[0] - (200 - 12 - 6)) < 0.01));
+    const tails = net.arrows.filter(t => t.some(p => Math.abs(p[0] - (200 - 12 - 6 * 0.75)) < 0.01));   // 6 m arrows at 3/4 size
     assert.ok(tails.some(t => t.some(p => Math.abs(p[1]) < 0.2)) && tails.some(t => t.some(p => Math.abs(p[1] + 3.6) < 0.2)), 'tails on the lane centers');
+    // they stay inside their lanes: clear of the edge lines (3.3 m from the 3.6 m lanes' outer edges) by more than 0.3 m
+    const narrow = roadNetwork({ ways: [
+      { id: 1, lanes: 2, oneWay: true, width: 5.6, laneW: 2.8, turnsFwd: [['left'], ['right']], pts: [[0, 0], [200, 0]] },
+      { id: 2, lanes: 2, oneWay: false, width: 7.2, pts: [[200, -100], [200, 0], [200, 100]] },
+    ] });
+    assert.ok(narrow.arrows.flat().every(p => Math.abs(p[1]) < 2.8 - 0.3 - 0.3), 'inside a narrow road\'s edge lines');
     // a way ending in nothing (no junction) gets none
     const lone = roadNetwork({ ways: [{ id: 1, lanes: 2, oneWay: true, width: 7.2, laneW: 3.6, turnsFwd: [['left'], ['through']], pts: [[0, 0], [200, 0]] }] });
     assert.equal(lone.arrows.length, 0);

@@ -669,7 +669,10 @@ const PARALLEL_ANG = 5 * Math.PI / 180;  // a way leaving within this of our lin
 const CONTINUE_ANG = 25 * Math.PI / 180; // end to end at less than this: the road goes on, no opening
 const EDGE_INSET = 0.3;                  // m: the edge lines sit this far in from the strip's edge, as painted ones do
 const ARROW_FROM_END = [12, 42];         // m before a junction the turn arrows are painted (their tips)
-const ARROW_LEN = 6;                     // m
+const ARROW_LEN = 6;                     // m, at full size
+const ARROW_SCALE = 0.75;                // the arrows' size in a wide lane
+const ARROW_REACH = 1.5;                 // m: how far a bent arrow reaches to the side at full size
+const ARROW_CLEAR = 0.6;                 // m: kept clear inside the lane's edge (an edge line is painted 0.3 m in)
 
 // The turn arrows' shapes, in meters along the lane (u, from the tail) and to its left (v): triangles. Through: a shaft
 // and a head; left and right: the shaft bending off at the top with the head pointing the new way.
@@ -842,12 +845,14 @@ export function roadNetwork(layer, leftTraffic = false, usLines = !leftTraffic) 
         ? (leftTraffic || w.oneWay ? h : -h + fwd * W) - (i + 0.5) * W
         : (leftTraffic ? -h : h - bwd * W) + (i + 0.5) * W;
       for (const back of ARROW_FROM_END) {
-        const tip = dir > 0 ? L - back : back, tail = tip - dir * ARROW_LEN;
+        const tip = dir > 0 ? L - back : back, tail = tip - dir * ARROW_LEN * ARROW_SCALE;
         if (tail < 0 || tail > L || L < back + ARROW_LEN + 5) continue;
         const [P, t] = pointAt(pts, st, tail), ux = mul(t, dir), nWay = left(t), vx = left(ux);
+        // sized to the lane: a bent arrow reaches ARROW_REACH m to the side at full size, kept ARROW_CLEAR m inside the lane
+        const k = clamp((W / 2 - ARROW_CLEAR) / ARROW_REACH, 0.4, ARROW_SCALE);
         turns.forEach((lane, i) => {
           const base = add(P, mul(nWay, center(i)));
-          for (const turn of lane) for (const tri of arrowShape(turn)) out.arrows.push(tri.map(([u, v]) => add(add(base, mul(ux, u)), mul(vx, v))));
+          for (const turn of lane) for (const tri of arrowShape(turn)) out.arrows.push(tri.map(([u, v]) => add(add(base, mul(ux, u * k)), mul(vx, v * k))));
         });
       }
     }
