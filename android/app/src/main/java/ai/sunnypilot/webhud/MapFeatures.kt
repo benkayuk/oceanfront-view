@@ -21,7 +21,7 @@ import kotlin.math.floor
  *
  * The same goes for the roads' full detail the tiles leave out (static/js/world/roaddetail.js): the lanes each way,
  * turn arrows, widths, roundabouts -- the tags of every road way in a road tile that has any of them, one Overpass
- * request per tile, kept as `ways2_<tlat>_<tlon>.json` `{tile, at, ways: {<osm id>: {tag: value}}}` and served whole
+ * request per tile, kept as `ways3_<tlat>_<tlon>.json` `{tile, at, ways: {<osm id>: {tag: value}}}` and served whole
  * (`/map/ways/<tlat>/<tlon>`).
  */
 class MapFeatures(private val root: File) {
@@ -53,7 +53,7 @@ class MapFeatures(private val root: File) {
 
     fun haveWays(tlat: Int, tlon: Int): Boolean = waysFile(tlat, tlon).isFile
 
-    private fun waysFile(tlat: Int, tlon: Int) = File(root, "ways2_${tlat}_$tlon.json")   // 2: with the overtaking tags
+    private fun waysFile(tlat: Int, tlon: Int) = File(root, "ways3_${tlat}_$tlon.json")   // 3: with the overtaking and lane_markings tags
 
     /** Fetch the road tile's way detail unless already on disk. True when it is. */
     fun ensureWays(tlat: Int, tlon: Int): Boolean = ensure("ways $tlat/$tlon", { haveWays(tlat, tlon) }) { fetchWays(tlat, tlon) }
