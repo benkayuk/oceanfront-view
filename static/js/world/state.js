@@ -45,6 +45,29 @@ const r1 = (v) => Math.round(v * 10) / 10;
 
 export { lanesOf };
 
+/** A way that crosses a tile boundary comes once from each tile, each copy clipped to the box separately: join the
+ *  copies of one way into one (they share nodes where they overlap), so the network doesn't take the copies for
+ *  roads crossing each other. Copies that don't touch stay apart. In place. */
+export function mergeCopies(ways) {
+  const key = (p) => p[0] + ',' + p[1];
+  const join = (a, b) => {   // b's run continuing a's, or null
+    const at = a.findIndex(p => key(p) === key(b[0]));
+    if (at < 0) return null;
+    return a.length - at >= b.length ? a : a.slice(0, at).concat(b);
+  };
+  const byId = new Map();
+  for (let i = 0; i < ways.length; i++) {
+    const w = ways[i], first = byId.get(w.id);
+    if (!first) { byId.set(w.id, [w]); continue; }
+    let merged = false;
+    for (const o of first) {
+      const pts = join(o.pts, w.pts) || join(w.pts, o.pts);
+      if (pts) { o.pts = pts; merged = true; break; }
+    }
+    if (merged) { ways.splice(i--, 1); } else first.push(w);
+  }
+}
+
 export class StateBuilder {
   /** worldDbc: the ADASBUS DBC (or the IBUS one, which carries the same signals); radarDbc: the radar's, or
    *  null; gearMsg: where VCU_GearSig comes from (0x214 on the ADAS bus, 0x234 on IBUS1); mapData: the road
@@ -284,8 +307,10 @@ export class StateBuilder {
       const L = laneLayout(way, 1), B = laneLayout(way, -1);
       ways.push({ id: way.id, cls: way.cls, className: way.className, name: way.name, ref: way.ref, lanes: L.lanes, oneWay: !!way.oneWay,
         width: r1(L.width), laneW: Math.round(L.laneW * 100) / 100, fwd: L.ours, bwd: L.theirs, centre: L.centre, detailed: L.detailed,
-        turnsFwd: L.turns, turnsBwd: way.oneWay ? null : B.turns, pts });
+        turnsFwd: L.turns, turnsBwd: way.oneWay ? null : B.turns,
+        passFwd: way.detail ? way.detail.passFwd : null, passBwd: way.detail ? way.detail.passBwd : null, pts });
     }
+    mergeCopies(ways);
     const features = this._features(x, y, R, near);
     const version = ++this._roadsSeq;
     this._roads = { version, cx: x, cy: y, mapVersion, layer: { version, cx: Math.round(x), cy: Math.round(y), r: R, ways, features } };
