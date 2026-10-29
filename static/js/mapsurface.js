@@ -145,8 +145,14 @@ export function placeInLane(place, frame, road, dt) {
  */
 export function mapReference(map, pose, road, settings, rearAxleZ = REAR_AXLE_TO_BUMPER, place = null, dt = 1 / 60, reveal = 1) {
   if (!map || !map.way || !map.horizon || map.horizon.length < 2 || (settings && settings.mapRoad === false)) return null;
-  const H = map.horizon, n = H.length;
-  const ci = Math.min(Math.max(map.carIndex || 0, 0), n - 1);
+  // the map's road as a smooth curve through its nodes, as the network draws it (roadNetwork), sharp where roads leave
+  const corners = new Set();
+  for (const b of map.branches || []) {
+    const k = map.horizon.findIndex(p => Math.abs(p[0] - b.x) < 0.6 && Math.abs(p[1] - b.y) < 0.6);
+    if (k >= 0) corners.add(k);
+  }
+  const sm = smoothLine(map.horizon, corners), H = sm.pts, n = H.length;
+  const ci = sm.index[Math.min(Math.max(map.carIndex || 0, 0), map.horizon.length - 1)];
   const c = Math.cos(pose.h), s = Math.sin(pose.h);
   const xs = new Float64Array(n), ys = new Float64Array(n), st = new Float64Array(n);
   for (let i = 0; i < n; i++) {
@@ -430,6 +436,52 @@ function offsetPolyVar(pts, ds, sign) {
   });
 }
 
+const SMOOTH_STEP = 3;          // m: the most a smoothed road's points lie apart
+const SMOOTH_MAX_TURN = 35 * Math.PI / 180;    // a node turning more than this stays a corner (a junction turn, a street corner): OSM
+                                               // draws a curve as many small turns
+
+/**
+ * A road's OSM nodes joined by a centripetal Catmull-Rom curve rather than straight segments: points added every
+ * SMOOTH_STEP m between nodes, the nodes themselves kept exactly (junctions are found by shared node coordinates, and
+ * the curve still passes through them). Nodes in `corners` (indices: junctions, where other roads leave) stay sharp,
+ * as does any node turning more than SMOOTH_MAX_TURN. Returns { pts, index } where index[i] is node i's place in pts.
+ */
+export function smoothLine(nodes, corners = null) {
+  const n = nodes.length, pts = [], index = [];
+  if (n < 3) { nodes.forEach((p, i) => { index.push(pts.length); pts.push(p); }); return { pts, index }; }
+  const at = (i) => nodes[Math.max(0, Math.min(n - 1, i))];
+  const turn = (i) => {   // the turn at node i (0 at the ends; a kept corner counts as sharp)
+    if (i <= 0 || i >= n - 1) return 0;
+    if (corners && corners.has(i)) return Math.PI;
+    const u = norm(sub(nodes[i], nodes[i - 1])), v = norm(sub(nodes[i + 1], nodes[i]));
+    return Math.abs(Math.atan2(cross(u, v), dot(u, v)));
+  };
+  for (let i = 0; i < n - 1; i++) {
+    index.push(pts.length);
+    pts.push(nodes[i]);
+    const p1 = nodes[i], p2 = nodes[i + 1], L = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
+    const k = Math.ceil(L / SMOOTH_STEP);
+    if (k < 2) continue;
+    // an end, or a corner too sharp to round, gets a straight-on tangent (its neighbour mirrored through it)
+    const p0 = i === 0 || turn(i) > SMOOTH_MAX_TURN ? sub(mul(p1, 2), p2) : at(i - 1);
+    const p3 = i + 1 === n - 1 || turn(i + 1) > SMOOTH_MAX_TURN ? sub(mul(p2, 2), p1) : at(i + 2);
+    // centripetal parameterisation (alpha 0.5): no loops or overshoot at uneven node spacing
+    const d = (a, b) => Math.max(1e-6, Math.sqrt(Math.hypot(b[0] - a[0], b[1] - a[1])));
+    const t0 = 0, t1 = d(p0, p1), t2 = t1 + d(p1, p2), t3 = t2 + d(p2, p3);
+    const lerp = (a, b, ta, tb, t) => add(mul(a, (tb - t) / (tb - ta)), mul(b, (t - ta) / (tb - ta)));
+    for (let j = 1; j < k; j++) {
+      const t = t1 + (t2 - t1) * j / k;
+      const a1 = lerp(p0, p1, t0, t1, t), a2 = lerp(p1, p2, t1, t2, t), a3 = lerp(p2, p3, t2, t3, t);
+      const b1 = lerp(a1, a2, t0, t2, t), b2 = lerp(a2, a3, t1, t3, t);
+      const c = lerp(b1, b2, t1, t2, t);
+      pts.push(c);
+    }
+  }
+  index.push(pts.length);
+  pts.push(nodes[n - 1]);
+  return { pts, index };
+}
+
 /** A polyline offset to its left by d (uses each point's neighbours for the direction). */
 function offsetPoly(pts, d) {
   return pts.map((p, i) => {
@@ -606,16 +658,56 @@ const TAPER_M = 20;             // m over which a road's width eases into a wide
 const NODE_CLEAR = 1.0;                  // m past the other road's half width that an inner line stops before a shared node
 const PARALLEL_ANG = 5 * Math.PI / 180;  // a way leaving within this of our line runs with us: no opening
 const CONTINUE_ANG = 25 * Math.PI / 180; // end to end at less than this: the road goes on, no opening
+const EDGE_INSET = 0.3;                  // m: the edge lines sit this far in from the strip's edge, as painted ones do
+const ARROW_FROM_END = [12, 42];         // m before a junction the turn arrows are painted (their tips)
+const ARROW_LEN = 6;                     // m
 
-/** Build the network's drawing geometry from a roads layer.
- *  Returns { strips: [{left, right}], edges: [polyline], centers: [polyline], lanes: [polyline] } in the pose frame. */
-export function roadNetwork(layer, leftTraffic = false) {
-  const out = { strips: [], edges: [], centers: [], lanes: [] };
+// The turn arrows' shapes, in meters along the lane (u, from the tail) and to its left (v): triangles. Through: a shaft
+// and a head; left and right: the shaft bending off at the top with the head pointing the new way.
+const bar = (a, b, w) => { const d = norm(sub(b, a)), n = mul(left(d), w / 2); return [[add(a, n), sub(a, n), add(b, n)], [sub(a, n), sub(b, n), add(b, n)]]; };
+const head = (p, d, len, hw) => { const n = mul(left(d), hw); return [[add(p, n), sub(p, n), add(p, mul(d, len))]]; };
+function arrowShape(turn) {
+  const L = ARROW_LEN, W = 0.3;
+  const bend = (side, k) => {   // k: how far it turns (1 a turn, 0.5 a slight one)
+    const top = [L * 0.5, 0], end = [L * 0.5 + 1.3, side * 0.75 * k], d = norm(sub(end, top));   // inside a 3 m lane
+    return [...bar([0, 0], top, W), ...bar(top, end, W), ...head(end, d, 1.3, 0.45)];
+  };
+  switch (turn) {
+    case 'through': return [...bar([0, 0], [L - 1.6, 0], W), ...head([L - 1.6, 0], [1, 0], 1.6, 0.5)];
+    case 'left': case 'sharp_left': return bend(1, 1);
+    case 'right': case 'sharp_right': return bend(-1, 1);
+    case 'slight_left': case 'merge_to_left': return bend(1, 0.5);
+    case 'slight_right': case 'merge_to_right': return bend(-1, 0.5);
+    default: return [];   // none, reverse, anything else: no arrow
+  }
+}
+
+/** The point and unit direction at station s of a polyline with stations st. */
+function pointAt(pts, st, s) {
+  let i = 1;
+  while (i < pts.length - 1 && st[i] < s) i++;
+  const a = pts[i - 1], b = pts[i], f = (s - st[i - 1]) / ((st[i] - st[i - 1]) || 1);
+  return [add(a, mul(sub(b, a), clamp(f, 0, 1))), norm(sub(b, a))];
+}
+
+/** Build the network's drawing geometry from a roads layer. `usLines`: a two-way road's center is the double yellow
+ *  line, else (the UK and Europe) a single white dashed one.
+ *  Returns { strips: [{left, right}], edges: [polyline], centers: [polyline], centerStyle: 'double' | 'single',
+ *  lanes: [polyline], arrows: [triangle] } in the pose frame. */
+export function roadNetwork(layer, leftTraffic = false, usLines = !leftTraffic) {
+  const out = { strips: [], edges: [], centers: [], centerStyle: usLines ? 'double' : 'single', lanes: [], arrows: [] };
   if (!layer || !layer.ways) return out;
-  const ways = layer.ways.filter(w => w.pts.length >= 2);
+  const key = (p) => p[0] + ',' + p[1];
+  // each road a smooth curve through its OSM nodes (smoothLine), kept sharp at the nodes it shares with another road
+  const raw = layer.ways.filter(w => w.pts.length >= 2), uses = new Map();
+  for (const w of raw) for (const p of w.pts) uses.set(key(p), (uses.get(key(p)) || 0) + 1);
+  const ways = raw.map(w => {
+    const corners = new Set();
+    w.pts.forEach((p, i) => { if (uses.get(key(p)) > 1) corners.add(i); });
+    return { ...w, pts: smoothLine(w.pts, corners).pts };
+  });
   // shared nodes: coordinate -> [{wi, i}]
   const nodes = new Map();
-  const key = (p) => p[0] + ',' + p[1];
   ways.forEach((w, wi) => w.pts.forEach((p, i) => { const k = key(p); if (!nodes.has(k)) nodes.set(k, []); nodes.get(k).push({ wi, i }); }));
   const leaving = (w, i) => {
     const o = [], p = w.pts[i];
@@ -697,20 +789,42 @@ export function roadNetwork(layer, leftTraffic = false) {
       }
       if (other > 0) inner.push([s0 - other - NODE_CLEAR, s0 + other + NODE_CLEAR]);
     });
-    out.edges.push(...cutByStations(left_, st, edgeCuts[1]), ...cutByStations(right_, st, edgeCuts['-1']));
+    // the edge lines, painted a little in from the strip's edges
+    const he = hs.map(x => Math.max(x / 2, x - EDGE_INSET));
+    out.edges.push(...cutByStations(offsetPolyVar(pts, he, 1), st, edgeCuts[1]), ...cutByStations(offsetPolyVar(pts, he, -1), st, edgeCuts['-1']));
     const W = w.laneW || LANE_W;
+    const centerLine = (piece, d) => { if (usLines) out.centers.push(offsetPoly(piece, d + 0.11), offsetPoly(piece, d - 0.11)); else out.centers.push(offsetPoly(piece, d)); };
     if (!w.oneWay && w.detailed && w.fwd != null) {
       // OSM says how many lanes go each way (roaddetail.js): from the right edge, the lanes driving with the way's nodes
       // (against them where traffic keeps left), the shared center lane, the rest; center lines either side of the shared part
       const R = leftTraffic ? w.bwd : w.fwd, C = w.centre || 0, n = w.fwd + w.bwd + C;
-      const centerAt = (d) => { for (const piece of cutByStations(pts, st, inner)) { if (C) out.centers.push(offsetPoly(piece, d)); else out.centers.push(offsetPoly(piece, d + 0.11), offsetPoly(piece, d - 0.11)); } };
+      const centerAt = (d) => { for (const piece of cutByStations(pts, st, inner)) { if (C) out.centers.push(offsetPoly(piece, d)); else centerLine(piece, d); } };
       centerAt(-h + R * W);
       if (C) centerAt(-h + (R + C) * W);
       for (let k = 1; k < n; k++) if (k !== R && k !== R + C) out.lanes.push(...cutByStations(offsetPoly(pts, -h + k * W), st, inner));
     } else if (!w.oneWay) {
-      for (const piece of cutByStations(pts, st, inner)) out.centers.push(offsetPoly(piece, 0.11), offsetPoly(piece, -0.11));
+      for (const piece of cutByStations(pts, st, inner)) centerLine(piece, 0);
     } else {
       for (let k = 1; k < w.lanes; k++) out.lanes.push(...cutByStations(offsetPoly(pts, -h + k * W), st, inner));
+    }
+    // the turn arrows OSM gives (turn:lanes), in each lane approaching a junction at the way's end
+    const junctionAt = (atEnd) => { const i = atEnd ? w.pts.length - 1 : 0, here = nodes.get(key(w.pts[i])); return !!here && here.length >= 2 && continuesInto(w, i) === null; };
+    const fwd = w.oneWay ? w.lanes : w.fwd, bwd = w.oneWay ? 0 : w.bwd;
+    for (const [dir, turns] of [[1, w.turnsFwd], [-1, w.turnsBwd]]) {
+      if (!turns || !turns.length || !junctionAt(dir > 0)) continue;
+      // lane i's center (i = 0 the driver's leftmost), m left of the way's line looking along its nodes
+      const center = (i) => dir > 0
+        ? (leftTraffic || w.oneWay ? h : -h + fwd * W) - (i + 0.5) * W
+        : (leftTraffic ? -h : h - bwd * W) + (i + 0.5) * W;
+      for (const back of ARROW_FROM_END) {
+        const tip = dir > 0 ? L - back : back, tail = tip - dir * ARROW_LEN;
+        if (tail < 0 || tail > L || L < back + ARROW_LEN + 5) continue;
+        const [P, t] = pointAt(pts, st, tail), ux = mul(t, dir), nWay = left(t), vx = left(ux);
+        turns.forEach((lane, i) => {
+          const base = add(P, mul(nWay, center(i)));
+          for (const turn of lane) for (const tri of arrowShape(turn)) out.arrows.push(tri.map(([u, v]) => add(add(base, mul(ux, u)), mul(vx, v))));
+        });
+      }
     }
   });
   return out;

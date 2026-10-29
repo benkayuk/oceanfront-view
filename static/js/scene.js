@@ -1,4 +1,4 @@
-import { leftTraffic } from './regional.js';
+import { leftTraffic, signStyle } from './regional.js';
 // three.js car view. World objects (vehicles, people) are 3D; road markings are flat ribbons.
 //
 // Vehicle frame (server data): x forward, y left, meters, origin = ego front bumper.
@@ -1419,7 +1419,9 @@ export class CarScene {
     // the car has strayed from for a moment
     const showMap = s.mapRoad !== false;
     this._alignMap(this.mapRef, zr);
-    this.roadnet.update(map, showMap, leftTraffic(s, this.state?.fisker));
+    // the US's double yellow center line where its speed signs would be, else (the UK, Europe) a white one
+    const f0 = this.state?.fisker, unit0 = s.units === 'mph' || s.units === 'kmh' ? s.units : f0?.vehicle?.displayUnit;
+    this.roadnet.update(map, showMap, leftTraffic(s, f0), signStyle(s, unit0, f0) === 'us');
     const f = this.state && this.state.fisker;
     this.ourSignal = this.mapFeatures.update(map, showMap && s.showSigns !== false, f ? f.tlr : null, this.pose, this.clock);
   }

@@ -6,6 +6,7 @@ import * as THREE from '../vendor/three.module.min.js';
 import { roadNetwork, NET_LINE_LIFT } from './mapsurface.js';
 
 const DASH = 3.0, GAP = 9.0;   // the network's lane dashes (world-fixed, so laid out once)
+const CENTER_DASH = 4.0, CENTER_GAP = 5.0;   // a single (UK / European) center line's: longer than a lane line's
 // The strips lie just above the ground plane (-0.01) and below the tires' contact plane (0), so the car stands on
 // them rather than in them; against the plane, far out where millimeters are below the depth buffer's resolution,
 // they win by polygon offset instead of height, and the lines over them by a larger one.
@@ -26,6 +27,8 @@ export class RoadNetwork {
       edge: new THREE.MeshBasicMaterial({ color: 0x6c727b, transparent: true, opacity: 0.6, fog: true, depthWrite: false, side, ...over(4) }),
       center: new THREE.MeshBasicMaterial({ color: 0xdcaa2e, transparent: true, opacity: 0.5, fog: true, depthWrite: false, side, ...over(4) }),
       lane: new THREE.MeshBasicMaterial({ color: 0x8e949d, transparent: true, opacity: 0.45, fog: true, depthWrite: false, side, ...over(4) }),
+      centerSingle: new THREE.MeshBasicMaterial({ color: 0x8e949d, transparent: true, opacity: 0.7, fog: true, depthWrite: false, side, ...over(4) }),
+      arrow: new THREE.MeshBasicMaterial({ color: 0x8e949d, transparent: true, opacity: 0.8, fog: true, depthWrite: false, side, ...over(4) }),
     };
     this.meshes = {};
     for (const k in this.mats) {
@@ -38,6 +41,7 @@ export class RoadNetwork {
     this.version = -1;
     this.layer = null;
     this.leftTraffic = false;
+    this.usLines = true;
     this.visible = true;
   }
 
@@ -46,14 +50,19 @@ export class RoadNetwork {
     this.mats.edge.color.set(t.edge);
     this.mats.center.color.set(t.yellow);
     this.mats.lane.color.set(t.line);
+    this.mats.centerSingle.color.set(t.edge);
+    this.mats.arrow.color.set(t.line);
   }
 
   /** Take the snapshot's layer when a new one came and rebuild. */
-  update(map, show = true, leftTraffic = false) {
+  /** usLines: the double yellow center line (the US), else a single white dashed one (regional.js). */
+  update(map, show = true, leftTraffic = false, usLines = !leftTraffic) {
     this.group.visible = show && !!this.layer;
     if (!map) return;
-    if (map.roads && map.roads.version !== this.version) { this.layer = map.roads; this.version = map.roads.version; this.leftTraffic = leftTraffic; this._rebuild(); }
-    else if (this.layer && leftTraffic !== this.leftTraffic) { this.leftTraffic = leftTraffic; this._rebuild(); }
+    const changed = leftTraffic !== this.leftTraffic || usLines !== this.usLines;
+    this.leftTraffic = leftTraffic; this.usLines = usLines;
+    if (map.roads && map.roads.version !== this.version) { this.layer = map.roads; this.version = map.roads.version; this._rebuild(); }
+    else if (this.layer && changed) this._rebuild();
     this.group.visible = show && !!this.layer;
   }
 
@@ -66,10 +75,14 @@ export class RoadNetwork {
   }
 
   _rebuild() {
-    const net = roadNetwork(this.layer, this.leftTraffic);
+    const net = roadNetwork(this.layer, this.leftTraffic, this.usLines);
     this.meshes.strip.geometry.dispose(); this.meshes.strip.geometry = stripsGeometry(net.strips, STRIP_LIFT);
     this.meshes.edge.geometry.dispose(); this.meshes.edge.geometry = linesGeometry(net.edges, 0.25, NET_LINE_LIFT);
-    this.meshes.center.geometry.dispose(); this.meshes.center.geometry = linesGeometry(net.centers, 0.13, NET_LINE_LIFT);
+    const single = net.centerStyle === 'single', centerDashes = [];
+    if (single) for (const l of net.centers) centerDashes.push(...dashed(l, CENTER_DASH, CENTER_GAP));
+    this.meshes.center.geometry.dispose(); this.meshes.center.geometry = linesGeometry(single ? [] : net.centers, 0.13, NET_LINE_LIFT);
+    this.meshes.centerSingle.geometry.dispose(); this.meshes.centerSingle.geometry = linesGeometry(centerDashes, 0.15, NET_LINE_LIFT);
+    this.meshes.arrow.geometry.dispose(); this.meshes.arrow.geometry = trianglesGeometry(net.arrows, NET_LINE_LIFT);
     const dashes = [];
     for (const l of net.lanes) dashes.push(...dashed(l));
     this.meshes.lane.geometry.dispose(); this.meshes.lane.geometry = linesGeometry(dashes, 0.12, NET_LINE_LIFT);
@@ -116,8 +129,14 @@ function geometry(pos, idx) {
   return g;
 }
 
-function dashed(pts) {
-  const P = DASH + GAP, out = [];
+function trianglesGeometry(tris, lift) {
+  const pos = [], idx = [];
+  for (const t of tris) { const b = pos.length / 3; for (const p of t) pos.push(...toWorld(p[0], p[1], lift)); idx.push(b, b + 1, b + 2); }
+  return geometry(pos, idx);
+}
+
+function dashed(pts, dash = DASH, gap = GAP) {
+  const P = dash + gap, out = [];
   let s0 = 0, cur = null;
   for (let i = 0; i < pts.length - 1; i++) {
     const [x0, y0] = pts[i], [x1, y1] = pts[i + 1];
@@ -126,9 +145,9 @@ function dashed(pts) {
     const at = (d) => [x0 + (x1 - x0) * d / len, y0 + (y1 - y0) * d / len];
     let a = 0;
     while (a < len) {
-      const m = ((s0 + a) % P + P) % P, dash = m < DASH;
-      const next = Math.min(len, a + (dash ? DASH - m : P - m));
-      if (dash) { if (!cur) { cur = [at(a)]; out.push(cur); } cur.push(at(next)); } else cur = null;
+      const m = ((s0 + a) % P + P) % P, on = m < dash;
+      const next = Math.min(len, a + (on ? dash - m : P - m));
+      if (on) { if (!cur) { cur = [at(a)]; out.push(cur); } cur.push(at(next)); } else cur = null;
       a = next;
     }
     s0 += len;

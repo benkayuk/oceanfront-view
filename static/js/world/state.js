@@ -281,9 +281,10 @@ export class StateBuilder {
       if (pts.length < 2) continue;
       const way = w.way;
       // the carriageway with the way's nodes: fwd lanes on the traffic side of its centerline, bwd on the other (roaddetail.js)
-      const L = laneLayout(way, 1);
+      const L = laneLayout(way, 1), B = laneLayout(way, -1);
       ways.push({ id: way.id, cls: way.cls, className: way.className, name: way.name, ref: way.ref, lanes: L.lanes, oneWay: !!way.oneWay,
-        width: r1(L.width), laneW: Math.round(L.laneW * 100) / 100, fwd: L.ours, bwd: L.theirs, centre: L.centre, detailed: L.detailed, pts });
+        width: r1(L.width), laneW: Math.round(L.laneW * 100) / 100, fwd: L.ours, bwd: L.theirs, centre: L.centre, detailed: L.detailed,
+        turnsFwd: L.turns, turnsBwd: way.oneWay ? null : B.turns, pts });
     }
     const features = this._features(x, y, R, near);
     const version = ++this._roadsSeq;

@@ -85,7 +85,7 @@ describe('the map', () => {
   });
 
   test('the network draws the center line where the sides meet and dashes between lanes going the same way', () => {
-    const road = (left) => roadNetwork({ ways: [{ id: 1, lanes: 3, oneWay: false, width: 10.8, laneW: 3.6, fwd: 2, bwd: 1, centre: 0, detailed: true, pts: [[0, 0], [100, 0]] }] }, left);
+    const road = (left, us = true) => roadNetwork({ ways: [{ id: 1, lanes: 3, oneWay: false, width: 10.8, laneW: 3.6, fwd: 2, bwd: 1, centre: 0, detailed: true, pts: [[0, 0], [100, 0]] }] }, left, us);
     const ys = (lines) => lines.map(l => +l[0][1].toFixed(2)).sort((a, b) => a - b);
     const r = road(false);
     assert.deepEqual(ys(r.centers), [1.69, 1.91]);   // a double line 1.8 m left of the centerline
@@ -93,5 +93,28 @@ describe('the map', () => {
     const l = road(true);
     assert.deepEqual(ys(l.centers), [-1.91, -1.69]);
     assert.deepEqual(ys(l.lanes), [1.8]);
+    // the UK's center is one white line, not a double yellow one
+    const uk = road(true, false);
+    assert.equal(uk.centerStyle, 'single');
+    assert.deepEqual(ys(uk.centers), [-1.8]);
+  });
+
+  test('turn arrows: one per lane and turn, near the junction at the way\'s end, pointing the way the lane goes', () => {
+    const net = roadNetwork({ ways: [
+      { id: 1, lanes: 3, oneWay: false, width: 10.8, laneW: 3.6, fwd: 2, bwd: 1, centre: 0, detailed: true,
+        turnsFwd: [['left'], ['through', 'right']], turnsBwd: null, pts: [[0, 0], [200, 0]] },
+      { id: 2, lanes: 2, oneWay: false, width: 7.2, pts: [[200, -100], [200, 0], [200, 100]] },
+    ] }, false, true);
+    assert.ok(net.arrows.length > 0);
+    const xs = net.arrows.flat().map(p => p[0]), ys = net.arrows.flat().map(p => p[1]);
+    assert.ok(Math.max(...xs) <= 200 - 12 + 1e-6 && Math.min(...xs) >= 200 - 42 - 6 - 1e-6, 'within the approach');
+    // our two lanes lie between the right edge (-5.4) and the center line (1.8): centers 0 and -3.6; the left arrow bends
+    // left of its lane, never past the center line by more than its head
+    assert.ok(ys.every(y => y < 3 && y > -5.4), String([Math.min(...ys), Math.max(...ys)]));
+    const tails = net.arrows.filter(t => t.some(p => Math.abs(p[0] - (200 - 12 - 6)) < 0.01));
+    assert.ok(tails.some(t => t.some(p => Math.abs(p[1]) < 0.2)) && tails.some(t => t.some(p => Math.abs(p[1] + 3.6) < 0.2)), 'tails on the lane centers');
+    // a way ending in nothing (no junction) gets none
+    const lone = roadNetwork({ ways: [{ id: 1, lanes: 2, oneWay: true, width: 7.2, laneW: 3.6, turnsFwd: [['left'], ['through']], pts: [[0, 0], [200, 0]] }] });
+    assert.equal(lone.arrows.length, 0);
   });
 });
