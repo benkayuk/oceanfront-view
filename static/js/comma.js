@@ -70,8 +70,9 @@ export class CommaPanel {
     return m ? m[1] : 'the driving software';
   }
 
-  /** The same, starting a sentence. */
-  get Pilot() { const p = this.pilot; return p[0].toUpperCase() + p.slice(1); }
+  /** The same, starting a sentence: a fork's name as its makers write it (sunnypilot stays lowercase), the fallback
+   *  capitalised. */
+  get Pilot() { const p = this.pilot; return p === 'the driving software' ? 'The driving software' : p; }
 
   get sshOk() { return !!(this.status && this.status.ssh && this.status.ssh.ok); }
 
@@ -375,7 +376,7 @@ export class CommaPanel {
     const branchIn = el('input.cm-field', { placeholder: 'Branch name', value: this.branchDraft || '', oninput: e => { this.branchDraft = e.target.value; this.branchRestartLabel && this.branchRestartLabel(); }, list: 'cm-branches' });
     const datalist = el('datalist', { id: 'cm-branches' }, (this.branches || []).map(b => el('option', { value: b })));
     c.append(el('div.section', el('h3', 'Branch'),
-      el('p.desc', `Switch the install to another branch of ${g.remote || 'its repository'}. The updater is pointed at it too.`),
+      el('p.desc', `Switch the install to another branch of ${g.remote ? g.remote.replace(/^(https?:\/\/|git@)[^/:]+[/:]/, '').replace(/\.git$/, '') : 'its repository'}. The updater is pointed at it too.`),
       branchIn, datalist,
       this.branches ? el('p.desc', `${this.branches.length} branches on the remote`) : null,
       restartBox('branchRestart', () => `Restart ${this.pilot}${(this.branchDraft || '').trim() ? ' on ' + this.branchDraft.trim() : ''} when done`),
@@ -398,7 +399,7 @@ export class CommaPanel {
       restartBox('forkReboot', () => {
         // named after the fork going in, from its URL as typed
         const m = (this.forkUrl || '').trim().match(/([^/:]+?)(?:\.git)?\/?$/), b = (this.forkBranch || '').trim();
-        return `Reboot the comma into ${m ? m[1] : 'it'}${b ? ' (' + b + ')' : ''} when done`;
+        return `Reboot the comma into ${m ? m[1] : 'it'}${b && (!m || b.toLowerCase() !== m[1].toLowerCase()) ? ' (' + b + ')' : ''} when done`;
       }),
       el('div.btns',
         this.button('List branches', async () => {
