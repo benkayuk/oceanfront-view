@@ -1,4 +1,4 @@
-// Oceanfront View's own version and its updates, for the Software sheet. The Android app (AppUpdater, at
+// OceanScape's own version and its updates, for the Software sheet. The Android app (AppUpdater, at
 // /app/update on its own server) asks the repository's GitHub releases for a newer APK, downloads it, checks it
 // (the release's SHA-256, this app, the same signing key) and installs it: silently through root, which starts the
 // app again, else Android's own installer asks on screen. The HUD restarts either way, so not while the car moves.
