@@ -62,6 +62,17 @@ export class CommaPanel {
     return cs ? Math.abs(cs.vEgo || 0) : v && v.speedKph != null ? v.speedKph / 3.6 : 0;
   }
 
+  /** What runs on the comma, by its repository's name (sunnypilot, FrogPilot, openpilot…): the Comma tab works with any
+   *  fork. Until the install has been read, or if its remote doesn't say, the driving software. */
+  get pilot() {
+    const remote = this.info && this.info.git && this.info.git.remote;
+    const m = remote && remote.match(/([^/:]+?)(?:\.git)?\/?$/);
+    return m ? m[1] : 'the driving software';
+  }
+
+  /** The same, starting a sentence. */
+  get Pilot() { const p = this.pilot; return p[0].toUpperCase() + p.slice(1); }
+
   get sshOk() { return !!(this.status && this.status.ssh && this.status.ssh.ok); }
 
   leave() {
@@ -178,12 +189,12 @@ export class CommaPanel {
     c.append(keySec);
 
     const ok = this.sshOk;
-    c.append(el('div.section', el('h3', 'openpilot'),
-      el('p.desc', 'Not while the car is moving. A restart takes openpilot down for half a minute or so.'),
+    c.append(el('div.section', el('h3', this.pilot === 'the driving software' ? 'Driving software' : this.pilot),
+      el('p.desc', `Not while the car is moving. A restart takes ${this.pilot} down for half a minute or so.`),
       el('div.btns',
         this.jobButton('Start', 'start', {}, null, !ok),
-        this.jobButton('Stop', 'stop', {}, 'Stop openpilot? It stays off until started again or the comma restarts.', !ok),
-        this.jobButton('Restart', 'restart', {}, 'Restart openpilot?', !ok),
+        this.jobButton('Stop', 'stop', {}, `Stop ${this.pilot}? It stays off until started again or the comma restarts.`, !ok),
+        this.jobButton('Restart', 'restart', {}, `Restart ${this.pilot}?`, !ok),
         this.jobButton('Reboot', 'reboot', {}, 'Reboot the comma?', !ok, '.danger'))));
     if (ok) this.summary(c);
   }
@@ -197,7 +208,7 @@ export class CommaPanel {
       if (!i) { sec.append(el('p.desc', this.infoError ? `Couldn't read the comma: ${this.infoError}` : 'Reading…')); return; }
       const p = i.params || {}, g = i.git || {};
       sec.append(el('div.kv',
-        el('span', 'openpilot'), el('span', `${i.running ? 'running' : 'stopped'}${p.Version ? ' · ' + p.Version : ''}`),
+        el('span', this.Pilot), el('span', `${i.running ? 'running' : 'stopped'}${p.Version ? ' · ' + p.Version : ''}`),
         el('span', 'Install'), el('span', `${g.branch || '?'} @ ${g.commit || '?'}${g.dirty ? ' (modified)' : ''}`),
         el('span', 'Remote'), el('span', g.remote || '—'),
         el('span', 'AGNOS'), el('span', i.agnos || '—'),
@@ -231,7 +242,7 @@ export class CommaPanel {
     const pre = el('pre.term', this.logText || 'Reading…');
     const lines = this.app.segmented([['200', '200 lines'], ['1000', '1000'], ['3000', '3000']], String(this.logLines), v => { this.logLines = Number(v); poll(); });
     const pause = el('button.btn', { onclick: () => { this.logPaused = !this.logPaused; pause.textContent = this.logPaused ? 'Resume' : 'Pause'; } }, this.logPaused ? 'Resume' : 'Pause');
-    c.append(el('p.desc', 'openpilot\'s tmux session on the comma ("comma"): the manager\'s and its processes\' output, as it scrolls.'),
+    c.append(el('p.desc', `${this.Pilot}'s tmux session on the comma ("comma"): the manager's and its processes' output, as it scrolls.`),
       lines, el('div', { style: { height: '10px' } }), pre, el('div.btns', pause));
     let first = true;
     const poll = async () => {
@@ -260,13 +271,13 @@ export class CommaPanel {
   procs(c) {
     if (this.needSsh(c)) return;
     const box = el('div');
-    c.append(el('p.desc', 'openpilot\'s processes as its manager reports them (managerState), with CPU and memory from the comma\'s /proc.'), box);
+    c.append(el('p.desc', `${this.Pilot}'s processes as its manager reports them (managerState), with CPU and memory from the comma's /proc.`), box);
     const draw = () => {
       box.innerHTML = '';
       const i = this.info;
       if (!i) { box.append(el('p.desc', this.infoError ? `Couldn't read the comma: ${this.infoError}` : 'Reading…')); return; }
       if (!i.processes) {
-        box.append(el('div.banner', i.running ? `No process list (${i.messagingError || 'managerState is silent'})` : 'openpilot isn\'t running.'));
+        box.append(el('div.banner', i.running ? `No process list (${i.messagingError || 'managerState is silent'})` : `${this.Pilot} isn't running.`));
       } else {
         const running = i.processes.filter(p => p.running).length;
         box.append(el('p.desc', `${running} of ${i.processes.length} running`),
@@ -365,7 +376,7 @@ export class CommaPanel {
       el('p.desc', `Switch the install to another branch of ${g.remote || 'its repository'}. The updater is pointed at it too.`),
       branchIn, datalist,
       this.branches ? el('p.desc', `${this.branches.length} branches on the remote`) : null,
-      restartBox('branchRestart', 'Restart openpilot when done'),
+      restartBox('branchRestart', `Restart ${this.pilot} when done`),
       el('div.btns',
         this.button('List branches', async () => { this.branches = (await this.call('GET', '/branches')).branches; }),
         this.jobButton('Switch', 'branch', () => ({ branch: branchIn.value.trim(), restart: this.branchRestart.checked }),
@@ -390,13 +401,13 @@ export class CommaPanel {
           this.forkBranchesOf = u;
         }, { key: 'forkBranches', disabled: !this.sshOk }),
         this.jobButton('Install', 'install', () => ({ url: urlIn.value.trim(), branch: forkBranch.value.trim(), restart: this.forkReboot.checked }),
-          () => `Install ${urlIn.value.trim()} (${forkBranch.value.trim()}) on the comma? openpilot stops while it swaps, and the current install becomes the backup.`, false, '.primary'),
+          () => `Install ${urlIn.value.trim()} (${forkBranch.value.trim()}) on the comma? ${this.Pilot} stops while it swaps, and the current install becomes the backup.`, false, '.primary'),
         g.backup ? this.jobButton('Restore the backup', 'restore', () => ({ restart: this.forkReboot.checked }),
           `Swap the backup (${g.backup}) back in? The current install becomes the backup.`) : null)));
 
     // the ways round the Update button: openpilot's own updater, and git's two steps on their own
     c.append(el('details.section', el('summary', el('h3', { style: { display: 'inline' } }, 'Advanced')),
-      el('h4', 'openpilot\'s updater'),
+      el('h4', 'Built-in updater'),
       el('p.desc', 'comma\'s own updater, which runs by itself while the car is off: it checks the branch it follows, downloads an update in the ' +
         'background and installs it the next time the comma starts. Update above does the same at once.'),
       el('div.kv',
@@ -411,17 +422,17 @@ export class CommaPanel {
       el('h4', 'Git'),
       el('p.desc', 'Update\'s two steps on their own: Fetch only looks for new commits (nothing on the comma changes); Pull brings them in ' +
         '(fast-forward only, with its submodules).'),
-      restartBox('pullRestart', 'Restart openpilot after pulling'),
+      restartBox('pullRestart', `Restart ${this.pilot} after pulling`),
       el('div.btns', this.jobButton('Fetch', 'fetch'),
         this.jobButton('Pull', 'pull', () => ({ restart: this.pullRestart.checked }), 'Pull the latest of this branch into the comma\'s install?'))));
 
     c.append(el('div.section', el('h3', 'Panda'),
-      el('p.desc', 'The panda\'s firmware from this install (panda/board). openpilot flashes it by itself when it starts with a different one; ' +
-        'flashing here stops openpilot, builds and flashes, and starts it again. Recover is for a panda stuck in its bootloader (DFU).'),
+      el('p.desc', `The panda's firmware from this install (panda/board). ${this.Pilot} flashes it by itself when it starts with a different one; ` +
+        `flashing here stops ${this.pilot}, builds and flashes, and starts it again. Recover is for a panda stuck in its bootloader (DFU).`),
       el('div.btns',
         this.jobButton('Build', 'panda_build', {}, 'Build the panda firmware? It takes a few minutes of CPU.'),
-        this.jobButton('Build & flash', 'panda_flash', {}, 'Stop openpilot, build and flash the panda, and start openpilot again?', false, '.primary'),
-        this.jobButton('Recover (DFU)', 'panda_recover', {}, 'Recover the panda from DFU? openpilot stops meanwhile.'))));
+        this.jobButton('Build & flash', 'panda_flash', {}, `Stop ${this.pilot}, build and flash the panda, and start ${this.pilot} again?`, false, '.primary'),
+        this.jobButton('Recover (DFU)', 'panda_recover', {}, `Recover the panda from DFU? ${this.Pilot} stops meanwhile.`))));
   }
 
   // ---- debug ----------------------------------------------------------------------------------------------
@@ -483,7 +494,7 @@ export class CommaPanel {
         .map(a => pv.submodules.includes(a.area) ? `${a.area} (new version)` : `${a.area} (${a.files} file${a.files > 1 ? 's' : ''})`).join(', ') +
         (pv.areas.length > 12 ? `, and ${pv.areas.length - 12} more` : '') + '.'));
     }
-    if (!pv.prebuilt) sec.append(el('p.desc', 'openpilot is built on the comma, so the restart rebuilds what changed: that can take a few minutes.'));
+    if (!pv.prebuilt) sec.append(el('p.desc', `${this.Pilot} is built on the comma, so the restart rebuilds what changed: that can take a few minutes.`));
     if (pv.ahead) {
       sec.append(el('div.banner', `The comma also has ${pv.ahead} commit${pv.ahead > 1 ? 's' : ''} of its own that ${pv.upstream} doesn't. ` +
         'Update only moves forward, so it will stop without changing anything; Switch branch below replaces the install with the remote\'s.'));
@@ -491,7 +502,7 @@ export class CommaPanel {
     sec.append(el('div.btns',
       this.jobButton(`Update (${n})`, 'pull', () => { this.preview = null; return { restart: true }; }, null, false, '.primary'),
       cancel));
-    sec.append(el('p.desc', 'Update pulls them in and restarts openpilot. Not while driving.'));
+    sec.append(el('p.desc', `Update pulls them in and restarts ${this.pilot}. Not while driving.`));
     return sec;
   }
 

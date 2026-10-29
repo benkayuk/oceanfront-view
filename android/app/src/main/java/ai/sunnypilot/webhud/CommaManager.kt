@@ -307,9 +307,9 @@ class CommaManager(private val context: Context, private val link: () -> Link) {
         private val BRANCH = Regex("^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$")
         private val REPO_URL = Regex("^(https://[A-Za-z0-9.-]+(:[0-9]+)?/[A-Za-z0-9._~/-]+|git@[A-Za-z0-9.-]+:[A-Za-z0-9._~/-]+)$")
         private val ACTIONS = mapOf(
-            "start" to Action("Start openpilot", true),
-            "stop" to Action("Stop openpilot", true),
-            "restart" to Action("Restart openpilot", true),
+            "start" to Action("Start the driving software", true),
+            "stop" to Action("Stop the driving software", true),
+            "restart" to Action("Restart the driving software", true),
             "reboot" to Action("Reboot the comma", true, 30_000),
             "update_check" to Action("Check for an update", false, 30_000),
             "update_download" to Action("Download the update", false, 30_000),
