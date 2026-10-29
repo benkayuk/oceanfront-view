@@ -355,7 +355,9 @@ export class CommaPanel {
     const restartBox = (id, label, on = true) => {
       const box = el('input', { type: 'checkbox', checked: on });
       this[id] = box;
-      return el('label', { style: { display: 'flex', gap: '8px', alignItems: 'center', fontSize: '13px', marginTop: '8px' } }, box, label);
+      const text = el('span', typeof label === 'function' ? label() : label);
+      if (typeof label === 'function') this[id + 'Label'] = () => setText(text, label());   // follows what's typed or picked
+      return el('label', { style: { display: 'flex', gap: '8px', alignItems: 'center', fontSize: '13px', marginTop: '8px' } }, box, text);
     };
 
     c.append(el('div.section', el('h3', 'Installed'), el('div.kv',
@@ -370,20 +372,20 @@ export class CommaPanel {
 
     c.append(this.updateSection(g));
 
-    const branchIn = el('input.cm-field', { placeholder: 'Branch name', value: this.branchDraft || '', oninput: e => { this.branchDraft = e.target.value; }, list: 'cm-branches' });
+    const branchIn = el('input.cm-field', { placeholder: 'Branch name', value: this.branchDraft || '', oninput: e => { this.branchDraft = e.target.value; this.branchRestartLabel && this.branchRestartLabel(); }, list: 'cm-branches' });
     const datalist = el('datalist', { id: 'cm-branches' }, (this.branches || []).map(b => el('option', { value: b })));
     c.append(el('div.section', el('h3', 'Branch'),
       el('p.desc', `Switch the install to another branch of ${g.remote || 'its repository'}. The updater is pointed at it too.`),
       branchIn, datalist,
       this.branches ? el('p.desc', `${this.branches.length} branches on the remote`) : null,
-      restartBox('branchRestart', `Restart ${this.pilot} when done`),
+      restartBox('branchRestart', () => `Restart ${this.pilot}${(this.branchDraft || '').trim() ? ' on ' + this.branchDraft.trim() : ''} when done`),
       el('div.btns',
         this.button('List branches', async () => { this.branches = (await this.call('GET', '/branches')).branches; }),
         this.jobButton('Switch', 'branch', () => ({ branch: branchIn.value.trim(), restart: this.branchRestart.checked }),
           () => `Switch the comma to ${branchIn.value.trim()}? Local changes in /data/openpilot are discarded.`))));
 
-    const urlIn = el('input.cm-field', { placeholder: 'https://github.com/owner/repo.git', value: this.forkUrl || '', oninput: e => { this.forkUrl = e.target.value; } });
-    const forkBranch = el('input.cm-field', { placeholder: 'Branch', value: this.forkBranch || '', oninput: e => { this.forkBranch = e.target.value; }, list: 'cm-fork-branches' });
+    const urlIn = el('input.cm-field', { placeholder: 'https://github.com/owner/repo.git', value: this.forkUrl || '', oninput: e => { this.forkUrl = e.target.value; this.forkRebootLabel && this.forkRebootLabel(); } });
+    const forkBranch = el('input.cm-field', { placeholder: 'Branch', value: this.forkBranch || '', oninput: e => { this.forkBranch = e.target.value; this.forkRebootLabel && this.forkRebootLabel(); }, list: 'cm-fork-branches' });
     const forkList = el('datalist', { id: 'cm-fork-branches' }, (this.forkBranches || []).map(b => el('option', { value: b })));
     c.append(el('div.section', el('h3', 'Install a fork'),
       el('p.desc', 'Clone another repository and branch beside the current install, then swap it in. The current install is kept as the backup ' +
@@ -393,7 +395,11 @@ export class CommaPanel {
       u.replace(/^https:\/\/github.com\//, '').replace(/\.git$/, '')))),
       urlIn, forkBranch, forkList,
       this.forkBranches ? el('p.desc', `${this.forkBranches.length} branches in ${this.forkBranchesOf}`) : null,
-      restartBox('forkReboot', 'Reboot into it when done'),
+      restartBox('forkReboot', () => {
+        // named after the fork going in, from its URL as typed
+        const m = (this.forkUrl || '').trim().match(/([^/:]+?)(?:\.git)?\/?$/), b = (this.forkBranch || '').trim();
+        return `Reboot the comma into ${m ? m[1] : 'it'}${b ? ' (' + b + ')' : ''} when done`;
+      }),
       el('div.btns',
         this.button('List branches', async () => {
           const u = urlIn.value.trim();
