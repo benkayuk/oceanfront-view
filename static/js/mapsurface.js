@@ -711,8 +711,7 @@ const UK_DOUBLE = 0.14;   // m: each line of a double white line from its middle
 
 /** Whether traffic each way may cross a UK-style center line: { fwd, bwd } (fwd: the traffic going with the way's
  *  nodes). OSM's overtaking or divider tags when it has them; else a road with more lanes one way than the other (a
- *  climbing or overtaking lane) has a double line, solid on the side with more; two or more lanes each way, a solid
- *  double line; else a dashed one. */
+ *  climbing or overtaking lane) or two or more lanes each way has a solid double line; else a dashed one. */
 export function ukCenter(w, uk = true) {
   let fwd = w.passFwd ?? null, bwd = w.passBwd ?? null;
   if (fwd != null && bwd != null) return { fwd, bwd };
@@ -721,8 +720,7 @@ export function ukCenter(w, uk = true) {
   const f = w.detailed && w.fwd != null ? w.fwd : null, b = w.detailed && w.bwd != null ? w.bwd : null;
   let dFwd = true, dBwd = true;
   if (f != null && b != null && !w.centre) {
-    if (f > b) dFwd = false; else if (b > f) dBwd = false;
-    else if (f >= 2) dFwd = dBwd = false;
+    if (f !== b || f >= 2) dFwd = dBwd = false;
   } else if (!w.detailed && (w.lanes || 0) >= 4 && !w.centre) dFwd = dBwd = false;
   return { fwd: dFwd, bwd: dBwd };
 }

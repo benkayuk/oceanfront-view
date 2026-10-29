@@ -94,12 +94,11 @@ describe('the map', () => {
     const l = road(true);
     assert.deepEqual(ys(l.centers), [-1.91, -1.69]);
     assert.deepEqual(ys(l.lanes), [1.8]);
-    // the UK's center is white, not a double yellow line: with two lanes our way and one theirs, a double line, solid on
-    // our side (we may not cross into the oncoming lane) and dashed on theirs
+    // the UK's center is white, not a double yellow line: with two lanes our way and one theirs, solid on both sides
     const uk = road(true, false);
     assert.equal(uk.centerStyle, 'single');
-    assert.deepEqual(ys(uk.solids), [-1.66]);
-    assert.deepEqual(ys(uk.centers), [-1.94]);
+    assert.deepEqual(ys(uk.solids), [-1.94, -1.66]);
+    assert.deepEqual(uk.centers, []);
   });
 
   test('UK center lines: dashed by default, solid where OSM or the lanes say no overtaking', () => {
