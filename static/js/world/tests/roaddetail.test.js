@@ -117,4 +117,19 @@ describe('the map', () => {
     const lone = roadNetwork({ ways: [{ id: 1, lanes: 2, oneWay: true, width: 7.2, laneW: 3.6, turnsFwd: [['left'], ['through']], pts: [[0, 0], [200, 0]] }] });
     assert.equal(lone.arrows.length, 0);
   });
+
+  test('a road split into two ways at a bend: their edge lines meet where the ways join', () => {
+    const th = 15 * Math.PI / 180;
+    const net = roadNetwork({ ways: [
+      { id: 1, lanes: 2, oneWay: false, width: 7.2, pts: [[-120, 0], [-60, 0], [0, 0]] },
+      { id: 2, lanes: 2, oneWay: false, width: 7.2, pts: [[0, 0], [60 * Math.cos(th), 60 * Math.sin(th)], [120 * Math.cos(th), 120 * Math.sin(th)]] },
+    ] }, true, false);
+    const endsNear = (p) => net.edges.filter(e => [e[0], e[e.length - 1]].some(q => Math.hypot(q[0] - p[0], q[1] - p[1]) < 4));
+    // each side's two pieces end within a few centimeters of each other at the join
+    for (const side of [1, -1]) {
+      const near = endsNear([0, side * 3.3]).map(e => [e[0], e[e.length - 1]].reduce((a, q) => (Math.hypot(q[0], q[1] - side * 3.3) < Math.hypot(a[0], a[1] - side * 3.3) ? q : a)));
+      assert.equal(near.length, 2, String(side));
+      assert.ok(Math.hypot(near[0][0] - near[1][0], near[0][1] - near[1][1]) < 0.1, JSON.stringify(near));
+    }
+  });
 });

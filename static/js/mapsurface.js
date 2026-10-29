@@ -444,9 +444,18 @@ const SMOOTH_MAX_TURN = 35 * Math.PI / 180;    // a node turning more than this 
  * A road's OSM nodes joined by a centripetal Catmull-Rom curve rather than straight segments: points added every
  * SMOOTH_STEP m between nodes, the nodes themselves kept exactly (junctions are found by shared node coordinates, and
  * the curve still passes through them). Nodes in `corners` (indices: junctions, where other roads leave) stay sharp,
- * as does any node turning more than SMOOTH_MAX_TURN. Returns { pts, index } where index[i] is node i's place in pts.
+ * as does any node turning more than SMOOTH_MAX_TURN. `before` / `after`: the next node of the road beyond each end when
+ * it goes on in another way, so the two ways leave their shared node along the same tangent and their edges meet.
+ * Returns { pts, index } where index[i] is node i's place in pts.
  */
-export function smoothLine(nodes, corners = null) {
+export function smoothLine(nodes, corners = null, before = null, after = null) {
+  if (before || after) {
+    const ext = [...(before ? [before] : []), ...nodes, ...(after ? [after] : [])], o = before ? 1 : 0;
+    const shifted = corners ? new Set([...corners].map(i => i + o)) : null;
+    const r = smoothLine(ext, shifted);
+    const index = r.index.slice(o, o + nodes.length);
+    return { pts: r.pts.slice(index[0], index[index.length - 1] + 1), index: index.map(i => i - index[0]) };
+  }
   const n = nodes.length, pts = [], index = [];
   if (n < 3) { nodes.forEach((p, i) => { index.push(pts.length); pts.push(p); }); return { pts, index }; }
   const at = (i) => nodes[Math.max(0, Math.min(n - 1, i))];
@@ -701,10 +710,26 @@ export function roadNetwork(layer, leftTraffic = false, usLines = !leftTraffic) 
   // each road a smooth curve through its OSM nodes (smoothLine), kept sharp at the nodes it shares with another road
   const raw = layer.ways.filter(w => w.pts.length >= 2), uses = new Map();
   for (const w of raw) for (const p of w.pts) uses.set(key(p), (uses.get(key(p)) || 0) + 1);
+  // a road split into ways end to end (two ways sharing an end node, nothing else there) carries on smoothly across it
+  const ends = new Map();   // end node -> [{w, at: the neighbour node inside that way}]
+  for (const w of raw) for (const [i, j] of [[0, 1], [w.pts.length - 1, w.pts.length - 2]]) {
+    const k = key(w.pts[i]);
+    if (!ends.has(k)) ends.set(k, []);
+    ends.get(k).push({ w, at: w.pts[j] });
+  }
+  const beyond = (w, i) => {
+    const k = key(w.pts[i]), e = ends.get(k);
+    if (uses.get(k) !== 2 || !e || e.length !== 2) return null;
+    const o = e.find(x => x.w !== w);
+    if (!o) return null;
+    const p = w.pts[i], inner = w.pts[i === 0 ? 1 : w.pts.length - 2];
+    const u = norm(sub(p, inner)), v = norm(sub(o.at, p));
+    return Math.acos(clamp(dot(u, v), -1, 1)) < SMOOTH_MAX_TURN ? o.at : null;
+  };
   const ways = raw.map(w => {
-    const corners = new Set();
-    w.pts.forEach((p, i) => { if (uses.get(key(p)) > 1) corners.add(i); });
-    return { ...w, pts: smoothLine(w.pts, corners).pts };
+    const corners = new Set(), b = beyond(w, 0), a = beyond(w, w.pts.length - 1);
+    w.pts.forEach((p, i) => { if (uses.get(key(p)) > 1 && !(i === 0 && b) && !(i === w.pts.length - 1 && a)) corners.add(i); });
+    return { ...w, pts: smoothLine(w.pts, corners, b, a).pts };
   });
   // shared nodes: coordinate -> [{wi, i}]
   const nodes = new Map();
