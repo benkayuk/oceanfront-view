@@ -115,6 +115,9 @@ describe('the map', () => {
     // two lanes each way with no reservation: a solid double line
     const four = road({ lanes: 4, width: 14.4, fwd: 2, bwd: 2, centre: 0, detailed: true });
     assert.deepEqual([four.centers.length, four.solids.length], [0, 2]);
+    // a single-track road: no center line
+    const track = road({ width: 3.6, singleTrack: true });
+    assert.deepEqual([track.centers.length, track.solids.length, track.edges.length], [0, 0, 2]);
     // no markings at all
     const bare = road({ markings: false });
     assert.deepEqual([bare.centers.length, bare.solids.length, bare.lanes.length], [0, 0, 0]);

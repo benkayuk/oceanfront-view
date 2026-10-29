@@ -9,7 +9,7 @@ import { hexToBytes } from './dbc.js';
 import { FiskerRadar } from './fisker_radar.js';
 import { PoseEstimator } from './pose.js';
 import { MapMatcher } from './mapmatch.js';
-import { lanesOf, laneLayout } from './roaddetail.js';
+import { lanesOf, laneLayout, LANE_W } from './roaddetail.js';
 
 /** A bridge tick's frames, [[address, bus, hex], ...], as the builder takes them. */
 export function wireFrames(frames) {
@@ -305,9 +305,12 @@ export class StateBuilder {
       const way = w.way;
       // the carriageway with the way's nodes: fwd lanes on the traffic side of its centerline, bwd on the other (roaddetail.js)
       const L = laneLayout(way, 1), B = laneLayout(way, -1);
+      // a single-track road (two-way, one lane: passing places): one lane wide, no center line
+      const d = way.detail, single = !way.oneWay && (way.lanes === 1 || (d && d.lanes === 1));
+      const width = single ? (d && d.width >= 2.4 && d.width <= 5 ? d.width : LANE_W) : L.width;
       ways.push({ id: way.id, cls: way.cls, className: way.className, name: way.name, ref: way.ref, lanes: L.lanes, oneWay: !!way.oneWay,
         maxSpeed: way.maxSpeed || 0,
-        width: r1(L.width), laneW: Math.round(L.laneW * 100) / 100, fwd: L.ours, bwd: L.theirs, centre: L.centre, detailed: L.detailed,
+        width: r1(width), singleTrack: single, laneW: Math.round(L.laneW * 100) / 100, fwd: L.ours, bwd: L.theirs, centre: L.centre, detailed: L.detailed,
         turnsFwd: L.turns, turnsBwd: way.oneWay ? null : B.turns,
         passFwd: way.detail ? way.detail.passFwd : null, passBwd: way.detail ? way.detail.passBwd : null,
         markings: way.detail ? way.detail.markings : null, pts });

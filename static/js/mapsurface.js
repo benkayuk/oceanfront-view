@@ -887,8 +887,8 @@ export function roadNetwork(layer, leftTraffic = false, usLines = !leftTraffic) 
       for (const piece of cutByStations(pts, st, inner.concat(bends))) centerLine(piece, d);
       if (bends.length) for (const piece of cutByStations(pts, st, inner.concat(outside(bends, st[st.length - 1])))) double(piece, d, false, false);
     };
-    if (w.markings === false) {
-      // OSM says no lane markings (lane_markings=no): a narrow lane with only its edges, if those
+    if (w.markings === false || w.singleTrack) {
+      // OSM says no lane markings (lane_markings=no), or one lane both ways share: only its edges
     } else if (!w.oneWay && w.detailed && w.fwd != null) {
       // OSM says how many lanes go each way (roaddetail.js): from the right edge, the lanes driving with the way's nodes
       // (against them where traffic keeps left), the shared center lane, the rest; center lines either side of the shared part
