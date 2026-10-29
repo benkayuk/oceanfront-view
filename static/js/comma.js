@@ -357,8 +357,13 @@ export class CommaPanel {
       el('span', 'Backup'), el('span', g.backup || 'none'),
     ), el('div.btns', this.button('Refresh', () => this.loadInfo()))));
 
-    c.append(el('div.section', el('h3', 'openpilot\'s updater'),
-      el('p.desc', 'The updater the device runs while offroad: it checks the branch it follows, downloads an update in the background and installs it when the comma next starts.'),
+    c.append(this.updateSection(g));
+
+    // the ways round the Update button: openpilot's own updater, and git's two steps on their own
+    c.append(el('details.section', el('summary', el('h3', { style: { display: 'inline' } }, 'Advanced')),
+      el('h4', 'openpilot\'s updater'),
+      el('p.desc', 'comma\'s own updater, which runs by itself while the car is off: it checks the branch it follows, downloads an update in the ' +
+        'background and installs it the next time the comma starts. Update above does the same at once.'),
       el('div.kv',
         el('span', 'State'), el('span', p.UpdaterState || '—'),
         el('span', 'Follows'), el('span', p.UpdaterTargetBranch || g.branch || '—'),
@@ -367,10 +372,10 @@ export class CommaPanel {
       el('div.btns',
         this.jobButton('Check', 'update_check'),
         this.jobButton('Download', 'update_download'),
-        p.UpdateAvailable === '1' ? this.jobButton('Reboot to install', 'reboot', {}, 'Reboot the comma to install the update?', false, '.primary') : null)));
-
-    c.append(el('div.section', el('h3', 'Git'),
-      el('p.desc', 'Straight on the checkout in /data/openpilot: fetch what\'s new, or pull it in (fast-forward only, with its submodules).'),
+        p.UpdateAvailable === '1' ? this.jobButton('Reboot to install', 'reboot', {}, 'Reboot the comma to install the update?', false, '.primary') : null),
+      el('h4', 'Git'),
+      el('p.desc', 'Update\'s two steps on their own: Fetch only looks for new commits (nothing on the comma changes); Pull brings them in ' +
+        '(fast-forward only, with its submodules).'),
       restartBox('pullRestart', 'Restart openpilot after pulling'),
       el('div.btns', this.jobButton('Fetch', 'fetch'),
         this.jobButton('Pull', 'pull', () => ({ restart: this.pullRestart.checked }), 'Pull the latest of this branch into the comma\'s install?'))));
@@ -446,6 +451,47 @@ export class CommaPanel {
   // ---- jobs -----------------------------------------------------------------------------------------------
 
   /** A button that starts a job: args an object or a function giving one; ask a question (or a function giving one) to confirm. */
+  // Update: look (fetch, and what the new commits are and touch), then Update or Cancel
+  updateSection(g) {
+    const sec = el('div.section', el('h3', 'Update'));
+    const pv = this.preview;
+    if (!pv || pv.branch !== g.branch) {
+      sec.append(el('p.desc', `Looks for new commits on ${g.branch || 'this branch'} and shows what they change before anything is installed.`),
+        el('div.btns', this.button('Check for updates', async () => { this.preview = await this.call('GET', '/preview'); this.preview.at = Date.now(); },
+          { key: 'preview', disabled: !this.sshOk || (this.job && !this.job.done), cls: '.primary' })));
+      return sec;
+    }
+    const again = this.button('Check again', async () => { this.preview = await this.call('GET', '/preview'); this.preview.at = Date.now(); }, { key: 'preview' });
+    const cancel = el('button.btn', { onclick: () => { this.preview = null; this.rerender(); } }, pv.behind ? 'Cancel' : 'Close');
+    if (pv.error) { sec.append(el('p.desc', pv.error), el('div.btns', again, cancel)); return sec; }
+    if (!pv.behind) {
+      sec.append(el('p.desc', `Up to date with ${pv.upstream}` + (pv.ahead ? `, and ${pv.ahead} commit${pv.ahead > 1 ? 's' : ''} ahead of it (local ones)` : '') + '.'),
+        el('div.btns', again, cancel));
+      return sec;
+    }
+    const n = pv.behind;
+    sec.append(el('p.desc', `${n} new commit${n > 1 ? 's' : ''} on ${pv.upstream}` + (pv.commits.length < n ? ` (the latest ${pv.commits.length} shown)` : '') + ':'));
+    sec.append(el('div.kv', pv.commits.flatMap(c => [
+      el('span', c.hash),
+      el('span', c.subject, el('small', ` · ${c.author}${c.date ? ', ' + new Date(c.date).toLocaleDateString() : ''}`)),
+    ])));
+    if (pv.areas.length) {
+      sec.append(el('p.desc', { style: { marginTop: '10px' } }, 'What changes: ' + pv.areas.slice(0, 12)
+        .map(a => pv.submodules.includes(a.area) ? `${a.area} (new version)` : `${a.area} (${a.files} file${a.files > 1 ? 's' : ''})`).join(', ') +
+        (pv.areas.length > 12 ? `, and ${pv.areas.length - 12} more` : '') + '.'));
+    }
+    if (!pv.prebuilt) sec.append(el('p.desc', 'openpilot is built on the comma, so the restart rebuilds what changed: that can take a few minutes.'));
+    if (pv.ahead) {
+      sec.append(el('div.banner', `The comma also has ${pv.ahead} commit${pv.ahead > 1 ? 's' : ''} of its own that ${pv.upstream} doesn't. ` +
+        'Update only moves forward, so it will stop without changing anything; Switch branch below replaces the install with the remote\'s.'));
+    }
+    sec.append(el('div.btns',
+      this.jobButton(`Update (${n})`, 'pull', () => { this.preview = null; return { restart: true }; }, null, false, '.primary'),
+      cancel));
+    sec.append(el('p.desc', 'Update pulls them in and restarts openpilot. Not while driving.'));
+    return sec;
+  }
+
   jobButton(label, action, args = {}, ask = null, disabled = false, cls = '') {
     return el('button.btn' + cls, {
       disabled: disabled || !this.sshOk || (this.job && !this.job.done),

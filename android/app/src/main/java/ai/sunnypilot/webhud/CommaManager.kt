@@ -53,6 +53,7 @@ class CommaManager(private val context: Context, private val link: () -> Link) {
                 sub == "/hostkey" && method == "DELETE" -> { ssh.forgetHostKey(); status(check = true) }
                 sub == "/search" && method == "POST" -> { link().searchAgain(); JSONObject().put("ok", true) }
                 sub == "/info" && method == "GET" -> JSONObject(script("info.py", "python3 - <<'PY'\n${asset("info.py")}\nPY", 25_000))
+                sub == "/preview" && method == "GET" -> JSONObject(script("preview.py", "python3 - <<'PY'\n${asset("preview.py")}\nPY", 150_000))
                 sub == "/routes" && method == "GET" -> JSONObject(script("routes.py", "python3 - <<'PY'\n${asset("routes.py")}\nPY", 25_000))
                 sub == "/log" && method == "GET" -> log(query["lines"]?.toIntOrNull() ?: 400)
                 sub == "/branches" && method == "GET" -> branches(query["url"])
