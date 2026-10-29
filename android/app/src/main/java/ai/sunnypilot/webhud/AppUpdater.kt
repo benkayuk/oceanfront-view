@@ -104,7 +104,7 @@ class AppUpdater(private val context: Context, private val root: RootShell, priv
                 latest = parseRelease(JSONObject(get(LATEST_URL)))
                 checkError = null
             } catch (e: IOException) {
-                checkError = if (e.message?.startsWith("HTTP 404") == true) "the repository has no releases yet" else "couldn't reach GitHub: ${e.message}"
+                checkError = if (e.message?.startsWith("HTTP 404") == true) "GitHub has no releases it will show for $REPO (it's private, or has none yet)" else "couldn't reach GitHub: ${e.message}"
             } catch (e: Exception) {
                 checkError = e.message ?: e.javaClass.simpleName
             } finally {

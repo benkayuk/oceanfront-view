@@ -30,7 +30,7 @@ export class AppUpdate {
       method, headers: { 'X-App-Token': this.token, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body),
     });
     const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(j.error || `${r.status}`);
+    if (!r.ok) throw new Error(j.error ? `${j.error} (${r.status})` : `the app answered ${r.status} ${r.statusText || ''} to ${method} /app/update${path}`.trim());
     return j;
   }
 
@@ -121,9 +121,10 @@ export class AppUpdate {
     let latest, latestSub = null, latestCls = null;
     if (st.checking) latest = 'Checking…';
     else if (st.checkError) { latest = '—'; latestSub = st.checkError; }
+    else if (!l && this.error) { latest = '—'; latestSub = this.error; }
     else if (!l) latest = 'Not checked';
     else if (st.newer) { latest = `${l.version} · ${fmtBytes(l.size)}`; latestSub = `Update available · released ${day(Date.parse(l.published))}`; latestCls = 'ok'; }
-    else { latest = l.version; latestSub = 'Up to date'; latestCls = 'ok'; }
+    else { latest = l.version; latestSub = 'No update available'; latestCls = 'ok'; }
     kids.push(rows(
       row('Version', st.installed.version, `Installed ${day(st.installed.updated)}`),
       row('Latest release', latest, latestSub, latestCls),
@@ -149,7 +150,7 @@ export class AppUpdate {
     } else if (st.state === 'failed') {
       kids.push(note(`The update failed: ${st.error}`, true));
     }
-    if (this.error) kids.push(note(this.error, true));
+    if (this.error && l) kids.push(note(this.error, true));   // without a release it shows in the row above
 
     const checkBtn = el(plain ? 'button.btn' : 'button.fo-btn', { onclick: () => this.check() }, st.checking ? 'Checking…' : 'Check for updates');
     checkBtn.disabled = st.checking || this.busy;
