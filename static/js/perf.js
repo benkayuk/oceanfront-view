@@ -14,8 +14,7 @@ const SLOW = 0.88, FAST = 0.97;            // of the display's rate: below, a wi
 const DOWN_AFTER = 2, UP_AFTER = 8;        // slow / fast windows in a row before a step
 const HOLD_MS = 60000;                     // after a step up that turned slow again, no step up for this long
 const OVER_BUDGET = 1.15;                  // a window's median frame this far over the display's frame time: the GPU can't keep up
-const RATES = [60, 72, 90, 120, 144];      // display rates a window's median frame time snaps to
-const RATE_AFTER = 3;                      // windows in a row at another rate before the display's rate is taken to have changed
+const HZ = 60;                             // the screen's refresh rate: the Ocean's center screen is a fixed 60 Hz
 
 export class FrameMeter {
   constructor(app) {
@@ -23,8 +22,7 @@ export class FrameMeter {
     this.el = el('button.fps', { type: 'button', 'aria-label': 'Frame rate', onclick: () => { this.detail = !this.detail; this._show(); } });
     $('#app').append(this.el);
     this.detail = false;
-    this.hz = 60;          // the display's refresh rate, from the median frame time (at least 60)
-    this.rateSeen = { hz: 60, n: 0 };   // a different rate seen in windows in a row
+    this.hz = HZ;          // the display's refresh rate (not measured: a guess from bunched frames once pinned the resolution low)
     this.level = 0;        // AUTO_LEVELS index while on auto
     this.slow = 0;         // slow windows in a row
     this.fast = 0;         // fast windows in a row
@@ -58,23 +56,11 @@ export class FrameMeter {
     if (w.frames >= 10) {   // fewer: the page is hidden, or a tab in the background
       const sorted = w.intervals.sort((a, b) => a - b), median = sorted[sorted.length >> 1];
       this.stats = { fps, worst: w.worst, median, work: w.work / w.frames, calls: r.calls, tris: r.triangles };
-      this._rate(median);
       // a page the browser calls hidden may be throttled (a covered window): not slow, so auto waits
       if (this.app.settings.renderScale === 'auto' && !document.hidden) this._auto(fps, median, now);
     }
     this._reset(now);
     this._show();
-  }
-
-  // the display's rate, from windows' median frame times: a rate seen once (frames bunched after a stall) doesn't
-  // count, and the rate can come down again (it used to only go up, and a 60 Hz screen taken for 90 Hz never kept up)
-  _rate(median) {
-    if (!(median > 0)) return;
-    const hz = RATES.reduce((a, r) => (Math.abs(1000 / r - median) < Math.abs(1000 / a - median) ? r : a), RATES[0]);
-    if (Math.abs(1000 / hz - median) > 0.12 * 1000 / hz) { this.rateSeen.n = 0; return; }   // between rates: frames dropping, not a rate
-    if (hz === this.hz) { this.rateSeen.n = 0; return; }
-    this.rateSeen = hz === this.rateSeen.hz ? { hz, n: this.rateSeen.n + 1 } : { hz, n: 1 };
-    if (this.rateSeen.n >= RATE_AFTER) { this.hz = hz; this.rateSeen.n = 0; }
   }
 
   // slow: fewer frames than the display shows, with the typical frame over its time, so the GPU is behind and a lower
@@ -118,7 +104,7 @@ export class FrameMeter {
     const cam = this.app.roadcam?.camStats;
     if (cam) text += ` · cam ${cam.shown} fps`;
     if (this.detail) {
-      text += ` · ${this.hz} Hz · median ${s.median.toFixed(1)} ms · worst ${Math.round(s.worst)} ms · JS ${s.work.toFixed(1)} ms · ${s.calls} draws · ${Math.round(s.tris / 1000)}k tris`;
+      text += ` · median ${s.median.toFixed(1)} ms · worst ${Math.round(s.worst)} ms · JS ${s.work.toFixed(1)} ms · ${s.calls} draws · ${Math.round(s.tris / 1000)}k tris`;
       if (scale === 1) text += ' · 100%';
       if (lowfx) text += ' · no blur';
       if (cam) text += ` · cam ${cam.rx} in, ${cam.decoded} decoded${cam.lost ? `, ${cam.lost} lost` : ''}${cam.skipped ? `, ${cam.skipped} skipped` : ''}`;
