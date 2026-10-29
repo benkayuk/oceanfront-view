@@ -117,7 +117,9 @@ class LocalServer(
         val target = line.getOrNull(1).orEmpty()
         val path = target.substringBefore('?')
         if (path == "/ws" || path == "/video" || path.startsWith("/api/")) {
-            relay(client, head)
+            // a plain API call is one request on its own connection: kept alive, the WebView would send its next
+            // request down the same pipe, and an /app/ or /map/ call meant for this server would reach the comma
+            relay(client, if (path.startsWith("/api/")) closeAfter(head) else head)
         } else {
             try {
                 client.soTimeout = 0
@@ -156,6 +158,13 @@ class LocalServer(
     }
 
     // ---- the comma's API and stream ------------------------------------------------------------------
+
+    /** [head] asking for the connection to close after the response: any Connection / Keep-Alive header out, ours in. */
+    private fun closeAfter(head: ByteArray): ByteArray {
+        val lines = String(head, Charsets.ISO_8859_1).removeSuffix("\r\n\r\n").split("\r\n")
+        val kept = lines.filterIndexed { i, l -> i == 0 || !(l.startsWith("Connection:", true) || l.startsWith("Keep-Alive:", true)) }
+        return (kept + "Connection: close").joinToString("\r\n", postfix = "\r\n\r\n").toByteArray(Charsets.ISO_8859_1)
+    }
 
     private fun relay(client: Socket, head: ByteArray) {
         val target = device
