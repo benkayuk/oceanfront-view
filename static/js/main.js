@@ -416,6 +416,9 @@ class App {
 
   watchdog() {
     this.updateSource();
+    // the comma came or went: the settings' comma tabs show what it has, or say it isn't there
+    const comma = this.commaConnected;
+    if (comma !== this._commaWas) { this._commaWas = comma; if (this.ui.isOpen) this.ui.show(this.ui.tab, true); }
     // a link that went quiet without closing (Wi-Fi dropped) is abandoned and tried again, without a word
     if (this.connected && performance.now() - this.lastMsgAt > STALE_MS) this.reconnectNow();
     this.updateConnChip();

@@ -19,6 +19,15 @@ const LOG_MS = 1500, PROCS_MS = 5000, STATUS_MS = 5000, JOB_MS = 700;
 // repositories to start from (any https:// or git@ repository works); List branches shows what each has
 const FORKS = ['https://github.com/sunnypilot/sunnypilot.git', 'https://github.com/commaai/openpilot.git', 'https://github.com/moistpope/sunnypilot.git'];
 
+/** How a finished job ended: done, failed with its exit code, ran out of time, or lost its connection with the
+ *  result unknown (CommaManager checks a branch switch or pull afterwards, and reports done if it got there). */
+function jobState(j) {
+  if (j.code === 0) return 'done';
+  if (j.timedOut) return 'timed out';
+  if (j.lost && j.code === -1) return 'connection closed, result unknown';
+  return `failed (exit ${j.code})`;
+}
+
 export class CommaPanel {
   constructor(app) {
     this.app = app;
@@ -132,7 +141,10 @@ export class CommaPanel {
       d ? el('div.kv', el('span', 'Comma'), el('span', `${d.hostname} at ${d.host}`), el('span', 'Bridge'), el('span', `webhud ${d.version}`))
         : el('p.desc', 'Not connected. The app looks for the comma on the car\'s hotspot by itself (its bridge, port 8088, ' +
           'must be on: Settings → Developer → Web HUD). The HUD doesn\'t need it: the car\'s own buses drive it.'),
-      el('div.btns', this.button('Look again', () => this.call('POST', '/search').then(() => this.app.toast('Looking for the comma'))))));
+      el('div.btns', this.button('Look again', () => this.call('POST', '/search').then(() => {
+        this.app.toast('Looking for the comma');
+        [1500, 3500, 7000].forEach(ms => setTimeout(() => this.active && this.refreshStatus(), ms));   // found in a second or two, usually
+      })))));
 
     const k = st.key;
     const keySec = el('div.section', el('h3', 'SSH key'));
@@ -424,7 +436,7 @@ export class CommaPanel {
     c.append(jobs);
     this.call('GET', '/jobs').then(r => {
       jobs.append(r.jobs.length ? el('div.kv', r.jobs.flatMap(j => [el('span', new Date(j.startedAt).toLocaleTimeString()),
-        el('a', { href: '#', onclick: e => { e.preventDefault(); this.showJob(j.id); } }, `${j.title} · ${j.done ? (j.code === 0 ? 'done' : 'failed (' + j.code + ')') : 'running'}`)]))
+        el('a', { href: '#', onclick: e => { e.preventDefault(); this.showJob(j.id); } }, `${j.title} · ${j.done ? jobState(j) : 'running'}`)]))
         : el('p.desc', 'None yet.'));
     }).catch(() => {});
     c.append(el('div.section', el('h3', 'What the app read'), el('pre.term.short', this.info ? JSON.stringify(this.info, null, 1) : 'Nothing yet.'),
@@ -469,7 +481,7 @@ export class CommaPanel {
         if (this.job !== j) return;
         j.output += r.output;
         if (j.output.length > 400000) j.output = j.output.slice(-300000);
-        Object.assign(j, { title: r.title, offset: r.offset, done: r.done, code: r.code });
+        Object.assign(j, { title: r.title, offset: r.offset, done: r.done, code: r.code, timedOut: r.timedOut, lost: r.lost });
         this.drawJob();
         if (r.done) {
           clearInterval(this.jobTimer);
@@ -492,7 +504,7 @@ export class CommaPanel {
     if (!node) return;
     node.innerHTML = '';
     if (!j) return;
-    const state = j.done ? (j.code === 0 ? 'done' : `failed (exit ${j.code})`) : 'running…';
+    const state = j.done ? jobState(j) : 'running…';
     const pre = el('pre.term.short', j.output || '…');
     node.append(el('div.section', el('h3', j.title || 'Job', el('small', state)), pre,
       j.done ? el('div.btns', el('button.btn', { onclick: () => { this.job = null; this.drawJob(); } }, 'Dismiss')) : null));
