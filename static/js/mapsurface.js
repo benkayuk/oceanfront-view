@@ -704,25 +704,27 @@ function pointAt(pts, st, s) {
 
 /** Build the network's drawing geometry from a roads layer. `usLines`: a two-way road's center is the double yellow
  *  line, else (the UK and Europe) a white one: dashed where traffic may cross it, solid where it may not, and a double
- *  line (one of each, or two solid) where only one side may (ukCenter).
+ *  line (one of each, or two solid) where only one side may (ukCenter; the lanes and bend rules only driving on the left).
  *  Returns { strips: [{left, right}], edges: [polyline], centers: [polyline] (dashed when single), solids: [polyline]
- *  (solid white center lines), centerStyle: 'double' | 'single', lanes: [polyline], arrows: [triangle] } in the pose frame. */
+ *  (solid white center lines), yellowDashed: [polyline] (US passing lines), centerStyle: 'double' | 'single', lanes: [polyline], arrows: [triangle] } in the pose frame. */
 const UK_DOUBLE = 0.14;   // m: each line of a double white line from its middle
 
 /** Whether traffic each way may cross a UK-style center line: { fwd, bwd } (fwd: the traffic going with the way's
  *  nodes). OSM's overtaking or divider tags when it has them; else a road with more lanes one way than the other (a
  *  climbing or overtaking lane) has a double line, solid on the side with more; two or more lanes each way, a solid
  *  double line; else a dashed one. */
-export function ukCenter(w) {
+export function ukCenter(w, uk = true) {
   let fwd = w.passFwd ?? null, bwd = w.passBwd ?? null;
   if (fwd != null && bwd != null) return { fwd, bwd };
+  if (fwd != null || bwd != null) return { fwd: fwd ?? true, bwd: bwd ?? true };
+  if (!uk) return { fwd: null, bwd: null };   // elsewhere OSM's tags only; null: the country's usual line
   const f = w.detailed && w.fwd != null ? w.fwd : null, b = w.detailed && w.bwd != null ? w.bwd : null;
   let dFwd = true, dBwd = true;
   if (f != null && b != null && !w.centre) {
     if (f > b) dFwd = false; else if (b > f) dBwd = false;
     else if (f >= 2) dFwd = dBwd = false;
   } else if (!w.detailed && (w.lanes || 0) >= 4 && !w.centre) dFwd = dBwd = false;
-  return { fwd: fwd ?? dFwd, bwd: bwd ?? dBwd };
+  return { fwd: dFwd, bwd: dBwd };
 }
 
 const BEND_ACCEL = 2.45;     // m/s^2: a bend tighter than v^2 / this at the road's speed gets a solid line (60 mph: 290 m, 30 mph: 75 m)
@@ -757,7 +759,7 @@ function outside(intervals, L) {
 }
 
 export function roadNetwork(layer, leftTraffic = false, usLines = !leftTraffic) {
-  const out = { strips: [], edges: [], centers: [], solids: [], centerStyle: usLines ? 'double' : 'single', lanes: [], arrows: [] };
+  const out = { strips: [], edges: [], centers: [], solids: [], yellowDashed: [], centerStyle: usLines ? 'double' : 'single', lanes: [], arrows: [] };
   if (!layer || !layer.ways) return out;
   const key = (p) => p[0] + ',' + p[1];
   // each road a smooth curve through its OSM nodes (smoothLine), kept sharp at the nodes it shares with another road
@@ -872,17 +874,24 @@ export function roadNetwork(layer, leftTraffic = false, usLines = !leftTraffic) 
     out.edges.push(...cutByStations(offsetPolyVar(pts, he, 1), st, edgeCuts[1]), ...cutByStations(offsetPolyVar(pts, he, -1), st, edgeCuts['-1']));
     const W = w.laneW || LANE_W;
     // may each side cross the center line? (the side going with the way's nodes lies right of it, or left driving on the left)
-    const pass = ukCenter(w), fwdSide = leftTraffic ? 1 : -1;
+    // the UK's rules (driving on the left, white lines) from the lanes and bends; elsewhere only what OSM's tags say
+    const uk = leftTraffic && !usLines, pass = ukCenter(w, uk), fwdSide = leftTraffic ? 1 : -1;
     const double = (piece, d, fwdMay, bwdMay) => {   // a double white line: each side's half solid where that side may not cross
       for (const [side, may] of [[fwdSide, fwdMay], [-fwdSide, bwdMay]]) (may ? out.centers : out.solids).push(offsetPoly(piece, d + side * UK_DOUBLE));
     };
     const centerLine = (piece, d) => {
-      if (usLines) { out.centers.push(offsetPoly(piece, d + 0.11), offsetPoly(piece, d - 0.11)); return; }
-      if (pass.fwd && pass.bwd) out.centers.push(offsetPoly(piece, d)); else double(piece, d, pass.fwd, pass.bwd);
+      if (usLines) {
+        // double solid yellow, unless OSM lets a side pass: dashed yellow on that side, or one dashed line when both may
+        if (pass.fwd == null) out.centers.push(offsetPoly(piece, d + 0.11), offsetPoly(piece, d - 0.11));
+        else if (pass.fwd && pass.bwd) out.yellowDashed.push(offsetPoly(piece, d));
+        else for (const [side, may] of [[fwdSide, pass.fwd], [-fwdSide, pass.bwd]]) (may ? out.yellowDashed : out.centers).push(offsetPoly(piece, d + side * 0.11));
+        return;
+      }
+      if (pass.fwd == null || (pass.fwd && pass.bwd)) out.centers.push(offsetPoly(piece, d)); else double(piece, d, pass.fwd, pass.bwd);
     };
     // the center line along the way, clear of junctions: in the UK, solid both sides through a bend too tight to see
     // round at the road's speed (where OSM doesn't say otherwise)
-    const bends = !usLines && pass.fwd && pass.bwd && w.passFwd == null && w.passBwd == null ? blindBends(pts, st, w) : [];
+    const bends = uk && pass.fwd && pass.bwd && w.passFwd == null && w.passBwd == null ? blindBends(pts, st, w) : [];
     const centerRun = (d) => {
       for (const piece of cutByStations(pts, st, inner.concat(bends))) centerLine(piece, d);
       if (bends.length) for (const piece of cutByStations(pts, st, inner.concat(outside(bends, st[st.length - 1])))) double(piece, d, false, false);

@@ -130,6 +130,15 @@ describe('the map', () => {
     assert.ok(fast.solids.every(l => l.every(p => p[0] > -60 && p[1] < 230)), 'the solid part is the bend and its lead-ins');
     assert.ok(fast.centers.length >= 2, 'dashed again either side');
     assert.deepEqual([slow.solids.length, slow.centers.length], [0, 1]);
+    // the lanes and bends rules are the UK's: driving on the right they don't apply
+    const rhs = (extra, us) => roadNetwork({ ways: [{ id: 1, lanes: 2, oneWay: false, width: 7.2, className: 'tertiary', pts: arc, ...extra }] }, false, us);
+    assert.deepEqual([rhs({}, false).solids.length, rhs({}, false).centers.length], [0, 1]);
+    const us21 = roadNetwork({ ways: [{ id: 1, lanes: 3, oneWay: false, width: 10.8, laneW: 3.6, fwd: 2, bwd: 1, centre: 0, detailed: true, pts: [[0, 0], [100, 0]] }] }, false, true);
+    assert.deepEqual([us21.centers.length, us21.yellowDashed.length, us21.solids.length], [2, 0, 0]);
+    // the US with OSM's tags: a passing side dashed yellow, both passing one dashed yellow line
+    const usFwd = rhs({ passFwd: true, passBwd: false }, true);
+    assert.deepEqual([ys(usFwd.yellowDashed), ys(usFwd.centers)].map(a => a.length), [1, 1]);
+    assert.deepEqual([rhs({ passFwd: true, passBwd: true }, true).yellowDashed.length, rhs({ passFwd: true, passBwd: true }, true).centers.length], [1, 0]);
     // the tags win over the lanes
     assert.deepEqual(ukCenter({ detailed: true, fwd: 2, bwd: 1, passFwd: true, passBwd: true }), { fwd: true, bwd: true });
     assert.deepEqual(overtaking({ overtaking: 'backward' }), { fwd: false, bwd: true });

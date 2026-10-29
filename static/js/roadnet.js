@@ -80,7 +80,7 @@ export class RoadNetwork {
     this.meshes.edge.geometry.dispose(); this.meshes.edge.geometry = linesGeometry(net.edges, 0.25, NET_LINE_LIFT);
     const single = net.centerStyle === 'single', centerDashes = [];
     if (single) { for (const l of net.centers) centerDashes.push(...dashed(l, CENTER_DASH, CENTER_GAP)); centerDashes.push(...net.solids); }
-    this.meshes.center.geometry.dispose(); this.meshes.center.geometry = linesGeometry(single ? [] : net.centers, 0.13, NET_LINE_LIFT);
+    this.meshes.center.geometry.dispose(); this.meshes.center.geometry = linesGeometry(single ? [] : [...net.centers, ...net.yellowDashed.flatMap(l => dashed(l, CENTER_DASH, CENTER_GAP))], 0.13, NET_LINE_LIFT);
     this.meshes.centerSingle.geometry.dispose(); this.meshes.centerSingle.geometry = linesGeometry(centerDashes, 0.15, NET_LINE_LIFT);
     this.meshes.arrow.geometry.dispose(); this.meshes.arrow.geometry = trianglesGeometry(net.arrows, NET_LINE_LIFT);
     const dashes = [];
