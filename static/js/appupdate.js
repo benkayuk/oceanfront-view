@@ -76,7 +76,7 @@ export class AppUpdate {
 
   async install() {
     const l = this.st.latest;
-    if (!confirm(`Install Oceanfront View ${l.version}? It downloads ${fmtBytes(l.size)}, then the HUD restarts with the new version.`)) return;
+    if (!confirm(`Install OceanScape ${l.version}? It downloads ${fmtBytes(l.size)}, then the HUD restarts with the new version.`)) return;
     try {
       this.st = await this.call('POST', '/install', { speed: this.app.ui.comma.speed() });
       this.error = null;
