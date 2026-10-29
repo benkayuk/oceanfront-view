@@ -50,7 +50,7 @@ export function overtaking(tags) {
 
 const count = (v) => { const n = parseInt(v, 10); return Number.isFinite(n) && n >= 0 && n <= 12 ? n : null; };
 
-/** The parsed detail of a way from its tags: { width, fwd, bwd, both, turnsFwd, turnsBwd, roundabout, passFwd, passBwd } (null fields
+/** The parsed detail of a way from its tags: { width, fwd, bwd, both, turnsFwd, turnsBwd, roundabout, passFwd, passBwd, markings } (null fields
  *  where OSM doesn't say). `oneWay` is the tile's flag (the tags' oneway is already folded into it). */
 export function wayDetail(tags, oneWay = false) {
   if (!tags) return null;
@@ -74,7 +74,7 @@ export function wayDetail(tags, oneWay = false) {
   if (turnsBwd && bwd != null && turnsBwd.length !== bwd) turnsBwd = null;
   const pass = overtaking(tags);
   return { width, lanes, fwd, bwd, both, turnsFwd, turnsBwd, roundabout: tags.junction === 'roundabout' || tags.junction === 'circular',
-    passFwd: pass.fwd, passBwd: pass.bwd };
+    passFwd: pass.fwd, passBwd: pass.bwd, markings: tags.lane_markings === 'no' ? false : tags.lane_markings === 'yes' ? true : null };
 }
 
 /** A way's lane count when OSM doesn't say: two for a two-way road, two for a one-way road of a kind that is usually a
@@ -115,4 +115,4 @@ export function laneLayout(way, dir = 1, laneW = LANE_W) {
 
 /** The tags worth keeping from an Overpass way (the server keeps exactly these too). */
 export const WAY_TAGS = ['width', 'est_width', 'lanes', 'lanes:forward', 'lanes:backward', 'lanes:both_ways', 'turn:lanes',
-  'turn:lanes:forward', 'turn:lanes:backward', 'junction', 'overtaking', 'overtaking:forward', 'overtaking:backward', 'divider'];
+  'turn:lanes:forward', 'turn:lanes:backward', 'junction', 'overtaking', 'overtaking:forward', 'overtaking:backward', 'divider', 'lane_markings'];

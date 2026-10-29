@@ -26,7 +26,7 @@ describe('parsing', () => {
   });
 
   test('lanes each way: told, by difference, from the arrows', () => {
-    assert.deepEqual(wayDetail({ lanes: '3', 'lanes:forward': '2', width: '10' }), { width: 10, lanes: 3, fwd: 2, bwd: 1, both: 0, turnsFwd: null, turnsBwd: null, roundabout: false, passFwd: null, passBwd: null });
+    assert.deepEqual(wayDetail({ lanes: '3', 'lanes:forward': '2', width: '10' }), { width: 10, lanes: 3, fwd: 2, bwd: 1, both: 0, turnsFwd: null, turnsBwd: null, roundabout: false, passFwd: null, passBwd: null, markings: null });
     const d = wayDetail({ 'turn:lanes:backward': 'left|through', 'lanes:forward': '1' });
     assert.equal(d.bwd, 2); assert.equal(d.fwd, 1); assert.deepEqual(d.turnsBwd, [['left'], ['through']]);
     const one = wayDetail({ 'turn:lanes': 'through|through;right', junction: 'roundabout' }, true);
@@ -115,6 +115,18 @@ describe('the map', () => {
     // two lanes each way with no reservation: a solid double line
     const four = road({ lanes: 4, width: 14.4, fwd: 2, bwd: 2, centre: 0, detailed: true });
     assert.deepEqual([four.centers.length, four.solids.length], [0, 2]);
+    // no markings at all
+    const bare = road({ markings: false });
+    assert.deepEqual([bare.centers.length, bare.solids.length, bare.lanes.length], [0, 0, 0]);
+    assert.equal(wayDetail({ lane_markings: 'no' }).markings, false);
+    // a 100 m radius bend: too tight to see round at 60 mph, solid both sides through it and its lead-ins; fine at 30 mph
+    const arc = [[-200, 0]]; for (let a = 0; a <= 90; a += 3) arc.push([100 * Math.sin(a * Math.PI / 180), 100 - 100 * Math.cos(a * Math.PI / 180)]); arc.push([100, 300]);
+    const bend = (maxSpeed) => roadNetwork({ ways: [{ id: 1, lanes: 2, oneWay: false, width: 7.2, className: 'tertiary', maxSpeed, pts: arc }] }, true, false);
+    const fast = bend(0), slow = bend(13.4);
+    assert.equal(fast.solids.length, 2);
+    assert.ok(fast.solids.every(l => l.every(p => p[0] > -60 && p[1] < 230)), 'the solid part is the bend and its lead-ins');
+    assert.ok(fast.centers.length >= 2, 'dashed again either side');
+    assert.deepEqual([slow.solids.length, slow.centers.length], [0, 1]);
     // the tags win over the lanes
     assert.deepEqual(ukCenter({ detailed: true, fwd: 2, bwd: 1, passFwd: true, passBwd: true }), { fwd: true, bwd: true });
     assert.deepEqual(overtaking({ overtaking: 'backward' }), { fwd: false, bwd: true });

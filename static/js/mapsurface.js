@@ -725,6 +725,37 @@ export function ukCenter(w) {
   return { fwd: fwd ?? dFwd, bwd: bwd ?? dBwd };
 }
 
+const BEND_ACCEL = 2.45;     // m/s^2: a bend tighter than v^2 / this at the road's speed gets a solid line (60 mph: 290 m, 30 mph: 75 m)
+const BEND_CHORD = 25;       // m either side of a point over which its bend's radius is measured
+const BEND_LEAD = 40;        // m: the solid line starts this far before the bend and runs on as far after it
+const CLASS_SPEED = { motorway: 31.3, trunk: 26.8, primary: 26.8, secondary: 26.8, tertiary: 26.8, unclassified: 26.8 };   // m/s, the national limit
+
+/** Station intervals of a way's line through bends too tight for its speed (maxSpeed, else its class's national limit,
+ *  else 30 mph), with their lead-ins. */
+export function blindBends(pts, st, w) {
+  const L = st[st.length - 1];
+  const v = w.maxSpeed > 0 ? w.maxSpeed : CLASS_SPEED[(w.className || '').replace(/_link$/, '')] || 13.4;
+  const rMin = v * v / BEND_ACCEL, out = [];
+  if (L < 2 * BEND_CHORD) return out;
+  let run = null;
+  for (let s = BEND_CHORD; s <= L - BEND_CHORD; s += 5) {
+    const [a] = pointAt(pts, st, s - BEND_CHORD), [b] = pointAt(pts, st, s), [c] = pointAt(pts, st, s + BEND_CHORD);
+    // the circle through three points: R = |ab| |bc| |ca| / (2 |ab x ac|)
+    const area2 = Math.abs(cross(sub(b, a), sub(c, a)));
+    const R = area2 > 1e-9 ? Math.hypot(...sub(b, a)) * Math.hypot(...sub(c, b)) * Math.hypot(...sub(a, c)) / (2 * area2) : Infinity;
+    if (R < rMin) { if (run && s - BEND_LEAD <= run[1]) run[1] = s + BEND_LEAD; else out.push(run = [s - BEND_LEAD, s + BEND_LEAD]); }
+  }
+  return out.map(([a, b]) => [Math.max(0, a), Math.min(L, b)]);
+}
+
+/** The complement of sorted, disjoint intervals within [0, L]. */
+function outside(intervals, L) {
+  const out = []; let s = -1;
+  for (const [a, b] of intervals) { out.push([s, a]); s = b; }
+  out.push([s, L + 1]);
+  return out;
+}
+
 export function roadNetwork(layer, leftTraffic = false, usLines = !leftTraffic) {
   const out = { strips: [], edges: [], centers: [], solids: [], centerStyle: usLines ? 'double' : 'single', lanes: [], arrows: [] };
   if (!layer || !layer.ways) return out;
@@ -842,22 +873,32 @@ export function roadNetwork(layer, leftTraffic = false, usLines = !leftTraffic) 
     const W = w.laneW || LANE_W;
     // may each side cross the center line? (the side going with the way's nodes lies right of it, or left driving on the left)
     const pass = ukCenter(w), fwdSide = leftTraffic ? 1 : -1;
+    const double = (piece, d, fwdMay, bwdMay) => {   // a double white line: each side's half solid where that side may not cross
+      for (const [side, may] of [[fwdSide, fwdMay], [-fwdSide, bwdMay]]) (may ? out.centers : out.solids).push(offsetPoly(piece, d + side * UK_DOUBLE));
+    };
     const centerLine = (piece, d) => {
       if (usLines) { out.centers.push(offsetPoly(piece, d + 0.11), offsetPoly(piece, d - 0.11)); return; }
-      if (pass.fwd && pass.bwd) { out.centers.push(offsetPoly(piece, d)); return; }
-      // a double white line: each side's half solid where that side may not cross
-      for (const [side, may] of [[fwdSide, pass.fwd], [-fwdSide, pass.bwd]]) (may ? out.centers : out.solids).push(offsetPoly(piece, d + side * UK_DOUBLE));
+      if (pass.fwd && pass.bwd) out.centers.push(offsetPoly(piece, d)); else double(piece, d, pass.fwd, pass.bwd);
     };
-    if (!w.oneWay && w.detailed && w.fwd != null) {
+    // the center line along the way, clear of junctions: in the UK, solid both sides through a bend too tight to see
+    // round at the road's speed (where OSM doesn't say otherwise)
+    const bends = !usLines && pass.fwd && pass.bwd && w.passFwd == null && w.passBwd == null ? blindBends(pts, st, w) : [];
+    const centerRun = (d) => {
+      for (const piece of cutByStations(pts, st, inner.concat(bends))) centerLine(piece, d);
+      if (bends.length) for (const piece of cutByStations(pts, st, inner.concat(outside(bends, st[st.length - 1])))) double(piece, d, false, false);
+    };
+    if (w.markings === false) {
+      // OSM says no lane markings (lane_markings=no): a narrow lane with only its edges, if those
+    } else if (!w.oneWay && w.detailed && w.fwd != null) {
       // OSM says how many lanes go each way (roaddetail.js): from the right edge, the lanes driving with the way's nodes
       // (against them where traffic keeps left), the shared center lane, the rest; center lines either side of the shared part
       const R = leftTraffic ? w.bwd : w.fwd, C = w.centre || 0, n = w.fwd + w.bwd + C;
-      const centerAt = (d) => { for (const piece of cutByStations(pts, st, inner)) { if (C) out.centers.push(offsetPoly(piece, d)); else centerLine(piece, d); } };
+      const centerAt = (d) => { if (!C) { centerRun(d); return; } for (const piece of cutByStations(pts, st, inner)) out.centers.push(offsetPoly(piece, d)); };
       centerAt(-h + R * W);
       if (C) centerAt(-h + (R + C) * W);
       for (let k = 1; k < n; k++) if (k !== R && k !== R + C) out.lanes.push(...cutByStations(offsetPoly(pts, -h + k * W), st, inner));
     } else if (!w.oneWay) {
-      for (const piece of cutByStations(pts, st, inner)) centerLine(piece, 0);
+      centerRun(0);
     } else {
       for (let k = 1; k < w.lanes; k++) out.lanes.push(...cutByStations(offsetPoly(pts, -h + k * W), st, inner));
     }

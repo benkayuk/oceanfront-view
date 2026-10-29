@@ -205,11 +205,11 @@ class MapFeatures(private val root: File) {
 out body;"""
         /** The road ways with any lane, width or junction detail (roaddetail.js WAY_TAGS), tags only. */
         private val WAYS_QUERY = """[out:json][timeout:120];
-way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|service)(_link)?$"][~"^(lanes|width|est_width|turn:lanes|junction|overtaking|divider)"~"."]({bbox});
+way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|service)(_link)?$"][~"^(lanes|width|est_width|turn:lanes|junction|overtaking|divider|lane_markings)"~"."]({bbox});
 out tags;"""
         private val WAY_TAGS = listOf("width", "est_width", "lanes", "lanes:forward", "lanes:backward", "lanes:both_ways", "turn:lanes",
             "turn:lanes:forward", "turn:lanes:backward", "junction",
-            "overtaking", "overtaking:forward", "overtaking:backward", "divider")
+            "overtaking", "overtaking:forward", "overtaking:backward", "divider", "lane_markings")
 
         /** `/map/features/<klat>/<klon>` -> (klat, klon), or null. */
         fun parsePath(path: String): Pair<Int, Int>? {

@@ -306,9 +306,11 @@ export class StateBuilder {
       // the carriageway with the way's nodes: fwd lanes on the traffic side of its centerline, bwd on the other (roaddetail.js)
       const L = laneLayout(way, 1), B = laneLayout(way, -1);
       ways.push({ id: way.id, cls: way.cls, className: way.className, name: way.name, ref: way.ref, lanes: L.lanes, oneWay: !!way.oneWay,
+        maxSpeed: way.maxSpeed || 0,
         width: r1(L.width), laneW: Math.round(L.laneW * 100) / 100, fwd: L.ours, bwd: L.theirs, centre: L.centre, detailed: L.detailed,
         turnsFwd: L.turns, turnsBwd: way.oneWay ? null : B.turns,
-        passFwd: way.detail ? way.detail.passFwd : null, passBwd: way.detail ? way.detail.passBwd : null, pts });
+        passFwd: way.detail ? way.detail.passFwd : null, passBwd: way.detail ? way.detail.passBwd : null,
+        markings: way.detail ? way.detail.markings : null, pts });
     }
     mergeCopies(ways);
     const features = this._features(x, y, R, near);
