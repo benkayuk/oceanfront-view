@@ -44,8 +44,8 @@ android {
         applicationId = "ai.sunnypilot.oceanscape"
         minSdk = 26
         targetSdk = 36
-        versionCode = 13
-        versionName = "1.3.7-ben"
+        versionCode = 14
+        versionName = "1.3.8-ben"
     }
 
     buildTypes {
