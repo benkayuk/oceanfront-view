@@ -297,6 +297,10 @@ export function loadEgoModel(url) {
       const mats = new Map(), meshes = new Map();   // by material name
       model.traverse((o) => {
         if (!o.isMesh) return;
+        // two-sided materials in one pass: the glass is thin panels, and three otherwise draws each transparent one
+        // twice a frame (back faces, then front) and checks its program each time; the roof's fade turns more of
+        // them transparent (cutaway.js), and its copies keep the flag
+        if (o.material.side === THREE.DoubleSide) o.material.forceSinglePass = true;
         mats.set(o.material.name, o.material);
         meshes.set(o.material.name, [...(meshes.get(o.material.name) || []), o]);
       });

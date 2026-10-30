@@ -13,9 +13,10 @@ export class RoadNetwork {
     this.group.renderOrder = 0;
     world.add(this.group);
     // double-sided: the strips' boundaries run whichever way the OSM way does; lifted clear of the ground plane,
-    // which otherwise wins the depth test at a distance
+    // which otherwise wins the depth test at a distance. One pass: they're flat, so three's back-then-front pair of
+    // draws for a transparent two-sided material (and its program check each time) buys nothing
     const side = THREE.DoubleSide;
-    const over = (units) => ({ polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -units });
+    const over = (units) => ({ polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -units, forceSinglePass: true });
     this.mats = {
       strip: new THREE.MeshBasicMaterial({ color: 0x1e2127, fog: true, side, ...over(2) }),
       edge: new THREE.MeshBasicMaterial({ color: 0x6c727b, transparent: true, opacity: 0.6, fog: true, depthWrite: false, side, ...over(4) }),
