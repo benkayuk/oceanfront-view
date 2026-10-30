@@ -510,17 +510,15 @@ export function driveModel(g) {
   const model = g.userData.model;
   model.updateMatrixWorld(true);
   const toModel = new THREE.Matrix4().copy(model.matrixWorld).invert();
-  const parts = model.children.filter(n => !n.name.startsWith('Steer_'));
   const hidden = new Set();
   for (const o of g.userData.interior || []) o.traverse((x) => hidden.add(x));
+  // the vehicle's top nodes (Body, the doors, the tailgate), without the four Steer_ corners
+  const parts = (model.getObjectByName('Steer_Front_L')?.parent || model).children.filter(n => !n.name.startsWith('Steer_'));
   const groups = new Map();   // material and attribute set -> {material, geos}
   for (const part of parts) part.traverse((o) => {
-    if (!o.isMesh || hidden.has(o) || !shown(o, model) || Array.isArray(o.material)) return;
+    if (!o.isMesh || hidden.has(o) || !shown(o, part) || Array.isArray(o.material)) return;
     const geo = new THREE.BufferGeometry();
-    for (const name of ['position', 'normal', 'uv']) {
-      const a = o.geometry.getAttribute(name);
-      if (a) geo.setAttribute(name, a.isInterleavedBufferAttribute ? deinterleaveAttribute(a) : a.clone());
-    }
+    for (const [name, a] of Object.entries(o.geometry.attributes)) geo.setAttribute(name, a.isInterleavedBufferAttribute ? deinterleaveAttribute(a) : a.clone());
     const n = geo.getAttribute('position').count;
     geo.setIndex(o.geometry.index ? o.geometry.index.clone() : [...Array(n).keys()]);
     geo.applyMatrix4(new THREE.Matrix4().multiplyMatrices(toModel, o.matrixWorld));

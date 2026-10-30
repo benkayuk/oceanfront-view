@@ -536,7 +536,7 @@ export class CarScene {
     }
   }
 
-  // The ego car drawn as its drive model (models.js driveModel: about a third of the draws, no interior) unless
+  // The ego car drawn as its drive model (models.js driveModel: about a quarter of the draws, no interior) unless
   // something needs the real one: the car controls open or anything of theirs showing (a door, the roof, a
   // cutaway), or the camera pulled in close enough to see inside.
   _driveModel() {
