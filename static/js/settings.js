@@ -442,6 +442,9 @@ export class Settings {
         'speed over the ground and relative, heading and size, in m, m/s and degrees. The ADAS reports no speeds: those are this view\'s estimate.'],
       ['demoInfotainment', 'Demo music & navigation', 'A made-up playlist and route in the music and navigation cards, the next turn ' +
         'coming nearer as the car drives, for trying them without the head unit.'],
+      ['carDemo', 'Demo car controls', 'Also show the car-control menus\' mockups: controls with nothing on the car behind them (Connectivity, ' +
+        'Navigation, Profiles, the climate temperatures, Hollywood Mode...), tagged Demo. Off, the menus hold only what sends to the car, ' +
+        'reads from it, or can\'t be set from here and says why.'],
       ['demoCarState', 'Demo live car state', 'Fill the "From the car" read-out in the car-control menus with made-up values, ' +
         'for trying it without the car\'s CAN link.'],
       ['showFps', 'Frame rate', 'Frames per second under the status card. Tap it for the slowest frame, the HUD\'s own script time per frame, ' +
