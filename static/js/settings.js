@@ -526,6 +526,24 @@ export class Settings {
   // The car's buses as the app reads them (the IBUS DBC, decoded in the worker; the messages the app lets through),
   // or the comma's ADAS bus (the ADASBUS DBC) while it's connected. An IBUS2 message the comma's ADAS bus is giving
   // says so: the worker takes it from the comma then, complete, rather than from the gateway's mirror.
+  // Why the car controls' sends might not reach the car: what was sent and what the CAN helper answered, and the
+  // interfaces as the kernel has them (bus state, listen-only, error counters, frames out). Copy it into a chat.
+  linkCheck() {
+    const out = el('pre.diag');
+    const app = window.WebHudApp;
+    const run = () => {
+      try { out.textContent = app.canDiag(); } catch (e) { out.textContent = `Couldn't check: ${e.message}`; }
+    };
+    const copy = () => navigator.clipboard?.writeText(out.textContent).then(() => this.app.toast('Copied'), () => this.app.toast('Couldn\'t copy: select the text instead'));
+    return el('div.section',
+      el('h3', 'Sending to the car'),
+      el('p.desc', 'Try a car control (lock, a window, a seat), then check here: it shows what went out, what the CAN helper said, and the state of the CAN chips.'),
+      el('div.row', el('div.lbl', el('small', app && app.canDiag ? '' : 'Only in the app on the car')),
+        el('button.btn', { disabled: !(app && app.canDiag), onclick: run }, 'Check the link'),
+        el('button.btn', { onclick: copy }, 'Copy')),
+      out);
+  }
+
   renderSignals() {
     const body = this.body;
     const adas = this.sigBus === 'ADAS';
@@ -542,6 +560,7 @@ export class Settings {
     const messages = dbc.messages.filter(m => !ids || ids.has(m.address));
     const filter = el('input.sig-filter', { type: 'search', placeholder: 'Filter messages or signals (e.g. Obj1, VCU, 0x31C)', value: this.sigFilter || '' });
     const list = el('div');
+    if (bus === 'IBUS1') body.append(this.linkCheck());
     body.append(el('p.desc', bus === 'ADAS'
       ? 'Live decoded ADASBUS messages (Fisker FM29 matrix), from the frames the comma streams. Tap a message to watch its signals.'
       : `Live decoded ${bus} messages (FM29 ${bus} matrix), as Pulse's CAN controller reads them from the car` +

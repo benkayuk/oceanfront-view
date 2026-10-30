@@ -553,3 +553,8 @@ aside.carpanel.hvac .fo-sheet__body > * + * { margin-top: 0; }
 .procs td.st { white-space: nowrap; }
 .procs .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--muted); }
 .procs .dot.run { background: var(--green); } .procs .dot.bad { background: var(--red); } .procs .dot.off { background: var(--line); }
+
+/* the Signals tab's link check (settings.js linkCheck) */
+pre.diag { margin: 8px 0 0; max-height: 46vh; overflow: auto; padding: 10px 12px; border-radius: 12px; background: #0d0f12; color: #d6dae0;
+  font: 11.5px/1.45 ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
+pre.diag:empty { display: none; }
