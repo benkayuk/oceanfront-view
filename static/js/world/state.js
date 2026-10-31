@@ -9,7 +9,7 @@ import { hexToBytes } from './dbc.js';
 import { FiskerRadar } from './fisker_radar.js';
 import { PoseEstimator } from './pose.js';
 import { MapMatcher } from './mapmatch.js';
-import { lanesOf, laneLayout, widthOf, LANE_W } from './roaddetail.js';
+import { lanesOf, laneLayout, widthOf, singleTrack, LANE_W } from './roaddetail.js';
 
 /** A bridge tick's frames, [[address, bus, hex], ...], as the builder takes them. */
 export function wireFrames(frames) {
@@ -34,7 +34,6 @@ const DEVICE_LAG_S = [0.05, 2.0];
 // the roads around the car for the view's map layer: every drivable way within ROADS_R, rebuilt once the car has
 // moved ROADS_STEP from the last build (or the tiles changed), and sent only then
 const ROADS_R = 320, ROADS_STEP = 40;
-const SINGLE_TRACK_M = 4.2;   // m: an Ordnance Survey carriageway narrower than this is a single-track road (two cars can't pass)
 // the map's point features (mapdata.js feature cells) that ride along in the layer, by their OSM tag
 const FEATURE_KINDS = { traffic_signals: 'signal', stop: 'stop', give_way: 'yield', crossing: 'crossing', mini_roundabout: 'miniRoundabout' };
 const FEAT_MAX = 160;         // nearest first
@@ -306,10 +305,8 @@ export class StateBuilder {
       const way = w.way;
       // the carriageway with the way's nodes: fwd lanes on the traffic side of its centerline, bwd on the other (roaddetail.js)
       const L = laneLayout(way, 1), B = laneLayout(way, -1);
-      // a single-track road (two-way, one lane: passing places): one lane wide, no center line. OSM says so with
-      // lanes=1; where it gives no count, an Ordnance Survey width too narrow for two lanes says so too
-      const d = way.detail, os1 = !(way.lanes > 0) && !(d && d.lanes) && way.osWidth > 0 && way.osWidth < SINGLE_TRACK_M;
-      const single = !way.oneWay && (way.lanes === 1 || (d && d.lanes === 1) || os1);
+      // a single-track road (two-way, one lane: passing places): one lane wide, no center line (roaddetail.js singleTrack)
+      const single = singleTrack(way);
       const dw = widthOf(way), width = single ? (dw >= 2.4 && dw <= 5 ? dw : LANE_W) : L.width;
       ways.push({ id: way.id, cls: way.cls, className: way.className, name: way.name, ref: way.ref, lanes: L.lanes, oneWay: !!way.oneWay,
         maxSpeed: way.maxSpeed || 0,
