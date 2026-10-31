@@ -76,3 +76,19 @@ describe('osroads', () => {
     assert.equal(laneLayout(wide).laneW, 3.6);
   });
 });
+
+describe('single-track roads', () => {
+  test('one shared lane, the car in the middle of it', async () => {
+    const { laneCenters } = await import('../../mapsurface.js');
+    const lane1 = { lanes: 1, oneWay: false, detail: null };
+    const L = laneLayout(lane1, 1);
+    assert.deepEqual([L.ours, L.theirs, L.centre, L.lanes], [1, 0, 0, 1]);
+    for (const left of [true, false]) assert.deepEqual(laneCenters(L.lanes, false, L.laneW, left, L), [0]);
+    // a narrow Ordnance Survey width with no OSM lane count says the same, at its width
+    const narrow = { lanes: 0, oneWay: false, detail: null, osWidth: 3.0 };
+    const N = laneLayout(narrow, 1);
+    assert.deepEqual([N.lanes, N.laneW], [1, 3.0]);
+    // a wider one stays two lanes
+    assert.equal(laneLayout({ lanes: 0, oneWay: false, detail: null, osWidth: 5.5 }, 1).lanes, 2);
+  });
+});
