@@ -7,6 +7,12 @@
 const FT = 0.3048;
 export const LANE_W = 3.6;   // m: a lane when OSM gives no width
 const LANE_W_MIN = 2.4, LANE_W_MAX = 4.6;   // m: a width tag that gives lanes outside this is the wrong kind of width (with verges, say)
+const OS_LANE_W_MIN = 2.0;   // m: Ordnance Survey's widths are measured kerb to kerb, so a narrow British lane is a real one
+
+/** A way's carriageway width: OSM's own tag, else Ordnance Survey's (osroads.js), else null. */
+export function widthOf(way) {
+  return (way && way.detail && way.detail.width) || (way && way.osWidth) || null;
+}
 
 /** A width tag in meters ("7", "7 m", "7.5m", "23'", "23 ft", "6'6\""), or null. */
 export function parseWidth(v) {
@@ -110,6 +116,7 @@ export function laneLayout(way, dir = 1, laneW = LANE_W) {
   const total = ours + theirs + centre;
   let W = laneW;
   if (d && d.width) { const w = d.width / total; if (w >= LANE_W_MIN && w <= LANE_W_MAX) W = w; }
+  else if (way && way.osWidth) { const w = way.osWidth / total; if (w >= OS_LANE_W_MIN && w <= LANE_W_MAX) W = w; }
   return { lanes: total, ours, theirs, centre, laneW: W, width: total * W, turns, detailed };
 }
 
